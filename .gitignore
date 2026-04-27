@@ -1,0 +1,80 @@
+# ============================================================
+#  BurpNinja - .gitignore
+#  Author: @altafpasha
+# ============================================================
+
+# ─── Workspace / Temp Directories ───────────────────────────
+burpninja_workspace/
+android_pentest_ready/
+/tmp/
+
+# ─── Downloaded APKs ────────────────────────────────────────
+*.apk
+*.zip
+*.xz
+*.tar.gz
+
+# ─── Burp Certificates ──────────────────────────────────────
+cacert.der
+cacert.pem
+*.0
+
+# ─── Frida Binaries ─────────────────────────────────────────
+frida-server
+frida-server-*
+frida_module.zip
+trust_module.zip
+frida-server.xz
+
+# ─── Log Files ──────────────────────────────────────────────
+*.log
+*.txt
+burpninja_log.txt
+
+# ─── API Keys / Secrets ─────────────────────────────────────
+.env
+.env.*
+*.secret
+config.local.*
+
+# ─── Python ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+pip-wheel-metadata/
+
+# ─── PowerShell ─────────────────────────────────────────────
+*.ps1xml
+
+# ─── Windows ────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ─── macOS ──────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── Linux ──────────────────────────────────────────────────
+*~
+.nfs*
+
+# ─── Editors ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+*.swo
+*.bak
+
+android_burp.sh
+android_setup_windows.ps1
