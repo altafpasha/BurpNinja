@@ -658,6 +658,112 @@ function Install-All {
 }
 
 # ------------------------------------------------------------------------------
+#  FRIDA SSL BYPASS
+# ------------------------------------------------------------------------------
+function Invoke-SSLBypass {
+    Write-Section "Frida SSL Bypass"
+
+    # ── Ask for target package ──────────────────────────────
+    $package = (Read-Host "  Enter target package name (e.g. com.target.app)").Trim()
+    if ([string]::IsNullOrWhiteSpace($package)) {
+        ERR "Package name cannot be empty"
+        return
+    }
+
+    # ── Write bypass.js to workspace ───────────────────────
+    $bypassPath = Join-Path $script:BaseDir "bypass.js"
+    $repoBypass = Join-Path (Split-Path $PSCommandPath) "bypass.js"
+    if (Test-Path $repoBypass) {
+        Copy-Item $repoBypass $bypassPath -Force
+        INFO "Using bypass.js from repo: $repoBypass"
+    }
+    else {
+        # Inline fallback
+        @'
+Java.perform(function () {
+    console.log("[+] BurpNinja SSL Bypass Active");
+    var X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
+    var SSLContext = Java.use("javax.net.ssl.SSLContext");
+    var TrustManager = Java.registerClass({
+        name: "dev.asd.test.TrustManager",
+        implements: [X509TrustManager],
+        methods: {
+            checkClientTrusted: function () {},
+            checkServerTrusted: function () {},
+            getAcceptedIssuers: function () { return []; }
+        }
+    });
+    var SSLContext_init = SSLContext.init.overload(
+        "[Ljavax.net.ssl.KeyManager;",
+        "[Ljavax.net.ssl.TrustManager;",
+        "java.security.SecureRandom"
+    );
+    SSLContext_init.implementation = function (km, tm, sr) {
+        console.log("[+] SSL Pinning Bypassed!");
+        SSLContext_init.call(this, km, [TrustManager.$new()], sr);
+    };
+});
+'@ | Out-File -FilePath $bypassPath -Encoding UTF8
+        INFO "bypass.js written to: $bypassPath"
+    }
+
+    # ── Restart ADB ────────────────────────────────────────
+    INFO "Restarting ADB..."
+    adb kill-server 2>$null | Out-Null
+    adb start-server 2>$null | Out-Null
+    adb wait-for-device 2>$null | Out-Null
+
+    # ── Forward Frida ports ────────────────────────────────
+    INFO "Forwarding Frida ports (27042, 27043)..."
+    adb forward tcp:27042 tcp:27042 2>$null | Out-Null
+    adb forward tcp:27043 tcp:27043 2>$null | Out-Null
+
+    # ── Request root ───────────────────────────────────────
+    INFO "Requesting ADB root..."
+    adb root 2>$null | Out-Null
+    Start-Sleep -Seconds 2
+
+    # ── Find frida-server on device ────────────────────────
+    $fridaLocations = @("/system/xbin/frida-server", "/data/local/tmp/frida-server")
+    $fridaBin = $null
+    foreach ($loc in $fridaLocations) {
+        $chk = adb shell "test -f $loc && echo yes" 2>$null
+        if ($chk -match "yes") { $fridaBin = $loc; break }
+    }
+
+    if (-not $fridaBin) {
+        WARN "frida-server not found on device."
+        WARN "Run option [4] to install Frida first, then retry."
+        Invoke-AIAnalysis "frida-server missing" "adb shell test -f /system/xbin/frida-server" "not found"
+        return
+    }
+    OK "Found frida-server at: $fridaBin"
+
+    # ── Kill old instance ──────────────────────────────────
+    INFO "Stopping any existing frida-server..."
+    adb shell "pkill frida-server" 2>$null | Out-Null
+    Start-Sleep -Seconds 1
+
+    # ── Start frida-server ─────────────────────────────────
+    INFO "Starting frida-server..."
+    adb shell "su -c '$fridaBin &'" 2>$null | Out-Null
+    Start-Sleep -Seconds 3
+
+    # ── Check PC frida tool ────────────────────────────────
+    if (-not (Get-Command frida -ErrorAction SilentlyContinue)) {
+        ERR "frida not found on PC. Run option [3] to install Frida tools first."
+        return
+    }
+
+    # ── Inject SSL bypass ──────────────────────────────────
+    OK "Injecting SSL bypass into: $package"
+    Write-Host ""
+    Write-Host "  CMD: frida -H 127.0.0.1:27042 -f $package -l bypass.js --no-pause" -ForegroundColor DarkCyan
+    Write-Host ""
+    & frida -H 127.0.0.1:27042 -f $package -l $bypassPath --no-pause
+}
+
+# ------------------------------------------------------------------------------
 #  MAIN MENU
 # ------------------------------------------------------------------------------
 function Start-Setup {
@@ -665,23 +771,26 @@ function Start-Setup {
         Show-Banner
 
         Write-Host "  SETUP" -ForegroundColor DarkGray
-        Write-Host "  [1] Full Install (All)"                                         -ForegroundColor White
-        Write-Host "  [2] Move Burp Certificate to Android system"                    -ForegroundColor White
-        Write-Host "  [3] PC Tools  (JADX, Apktool, Scrcpy, Frida, Objection)"       -ForegroundColor White
-        Write-Host "  [4] Android Frida Server"                                       -ForegroundColor White
-        Write-Host "  [5] Fix Frida Version Mismatch"                                 -ForegroundColor White
-        Write-Host "  [6] Android Apps  (ProxyToggle, ProxyDroid, ADBWifi, F-Droid, Aurora)"      -ForegroundColor White
+        Write-Host "  [1] Full Install (All)"                                              -ForegroundColor White
+        Write-Host "  [2] Move Burp Certificate to Android system"                         -ForegroundColor White
+        Write-Host "  [3] PC Tools  (JADX, Apktool, Scrcpy, Frida, Objection)"            -ForegroundColor White
+        Write-Host "  [4] Android Frida Server"                                            -ForegroundColor White
+        Write-Host "  [5] Fix Frida Version Mismatch"                                      -ForegroundColor White
+        Write-Host "  [6] Android Apps  (ProxyToggle, ProxyDroid, ADBWifi, F-Droid, Aurora)" -ForegroundColor White
         Write-Host ""
         Write-Host "  DEVICE" -ForegroundColor DarkGray
-        Write-Host "  [7] Device Info"                                                -ForegroundColor White
+        Write-Host "  [7] Device Info"                                                     -ForegroundColor White
+        Write-Host ""
+        Write-Host "  PENTEST" -ForegroundColor DarkGray
+        Write-Host "  [8] Frida SSL Bypass  (auto-start + inject)"                        -ForegroundColor Yellow
         Write-Host ""
         Write-Host "  AI" -ForegroundColor DarkGray
         if ($script:AiEnabled) {
-            Write-Host "  [8] AI Session Review  (analyze full log)" -ForegroundColor Magenta
-            Write-Host "  [9] Disable AI Mode"                       -ForegroundColor DarkGray
+            Write-Host "  [9]  AI Session Review  (analyze full log)" -ForegroundColor Magenta
+            Write-Host "  [10] Disable AI Mode"                       -ForegroundColor DarkGray
         }
         else {
-            Write-Host "  [8] Enable AI Mode  (Claude API)"          -ForegroundColor DarkGray
+            Write-Host "  [9] Enable AI Mode  (Claude API)"           -ForegroundColor DarkGray
         }
         Write-Host ""
         Write-Host "  [0] Exit" -ForegroundColor DarkGray
@@ -690,23 +799,24 @@ function Start-Setup {
         $opt = Read-Host "  Select"
 
         switch ($opt) {
-            "1" { Install-All }
-            "2" { Test-Internet; Test-ADB; Test-Burpsuite; Install-BurpCertificate }
-            "3" { Test-Internet; Install-PCTools }
-            "4" { Test-Internet; Test-ADB; Install-FridaAndroid }
-            "5" { Test-Internet; Test-ADB; Repair-FridaVersion }
-            "6" { Test-Internet; Test-ADB; Install-AndroidApps }
-            "7" { Test-ADB; Show-DeviceInfo }
-            "8" {
+            "1"  { Install-All }
+            "2"  { Test-Internet; Test-ADB; Test-Burpsuite; Install-BurpCertificate }
+            "3"  { Test-Internet; Install-PCTools }
+            "4"  { Test-Internet; Test-ADB; Install-FridaAndroid }
+            "5"  { Test-Internet; Test-ADB; Repair-FridaVersion }
+            "6"  { Test-Internet; Test-ADB; Install-AndroidApps }
+            "7"  { Test-ADB; Show-DeviceInfo }
+            "8"  { Test-ADB; Invoke-SSLBypass }
+            "9"  {
                 if ($script:AiEnabled) { Invoke-AILogReview }
                 else                   { Enable-AIMode }
             }
-            "9" {
+            "10" {
                 $script:AiEnabled    = $false
                 $script:AnthropicKey = ""
                 INFO "AI Mode disabled"
             }
-            "0" { Write-Host ""; exit }
+            "0"  { Write-Host ""; exit }
             default { ERR "Invalid option" }
         }
 

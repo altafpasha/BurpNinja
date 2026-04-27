@@ -683,6 +683,116 @@ install_all() {
 }
 
 # ─────────────────────────────────────────
+#  FRIDA SSL BYPASS
+# ─────────────────────────────────────────
+ssl_bypass() {
+    section "Frida SSL Bypass"
+
+    # ── Ask for package name ──────────────────────────
+    read -rp "  Enter target package (e.g. com.target.app): " package
+    package="${package// /}"
+    if [[ -z "$package" ]]; then
+        err "Package name cannot be empty"
+        return
+    fi
+
+    # ── Locate bypass.js ────────────────────────────
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local bypass_src="$script_dir/bypass.js"
+    local bypass_dst="$BASE_DIR/bypass.js"
+
+    if [[ -f "$bypass_src" ]]; then
+        cp "$bypass_src" "$bypass_dst"
+        info "Using bypass.js from repo: $bypass_src"
+    else
+        # Inline fallback
+        cat > "$bypass_dst" << 'BYPASS_EOF'
+Java.perform(function () {
+    console.log("[+] BurpNinja SSL Bypass Active");
+    var X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
+    var SSLContext = Java.use("javax.net.ssl.SSLContext");
+    var TrustManager = Java.registerClass({
+        name: "dev.asd.test.TrustManager",
+        implements: [X509TrustManager],
+        methods: {
+            checkClientTrusted: function () {},
+            checkServerTrusted: function () {},
+            getAcceptedIssuers: function () { return []; }
+        }
+    });
+    var SSLContext_init = SSLContext.init.overload(
+        "[Ljavax.net.ssl.KeyManager;",
+        "[Ljavax.net.ssl.TrustManager;",
+        "java.security.SecureRandom"
+    );
+    SSLContext_init.implementation = function (km, tm, sr) {
+        console.log("[+] SSL Pinning Bypassed!");
+        SSLContext_init.call(this, km, [TrustManager.$new()], sr);
+    };
+});
+BYPASS_EOF
+        info "bypass.js written to: $bypass_dst"
+    fi
+
+    # ── Restart ADB ─────────────────────────────────
+    info "Restarting ADB..."
+    adb kill-server &>/dev/null || true
+    adb start-server &>/dev/null || true
+    adb wait-for-device &>/dev/null || true
+
+    # ── Forward Frida ports ─────────────────────────
+    info "Forwarding Frida ports (27042, 27043)..."
+    adb forward tcp:27042 tcp:27042 &>/dev/null || true
+    adb forward tcp:27043 tcp:27043 &>/dev/null || true
+
+    # ── Request root ──────────────────────────────────
+    info "Requesting ADB root..."
+    adb root &>/dev/null || true
+    sleep 2
+
+    # ── Find frida-server on device ─────────────────────
+    local frida_bin=""
+    for loc in /system/xbin/frida-server /data/local/tmp/frida-server; do
+        if adb shell "test -f $loc" &>/dev/null; then
+            frida_bin="$loc"
+            break
+        fi
+    done
+
+    if [[ -z "$frida_bin" ]]; then
+        warn "frida-server not found on device."
+        warn "Run option [4] to install Frida first, then retry."
+        ai_analyze "frida-server missing" "adb shell test -f /system/xbin/frida-server" "not found"
+        return
+    fi
+    ok "Found frida-server at: $frida_bin"
+
+    # ── Kill old instance ──────────────────────────────
+    info "Stopping any existing frida-server..."
+    adb shell "pkill frida-server" &>/dev/null || true
+    sleep 1
+
+    # ── Start frida-server ─────────────────────────────
+    info "Starting frida-server..."
+    adb shell "su -c '$frida_bin &'" &>/dev/null || true
+    sleep 3
+
+    # ── Check PC frida ──────────────────────────────────
+    if ! command -v frida &>/dev/null; then
+        err "frida not found on PC. Run option [3] to install Frida tools first."
+        return
+    fi
+
+    # ── Inject ─────────────────────────────────────────
+    ok "Injecting SSL bypass into: $package"
+    echo ""
+    echo -e "  ${C_DCYAN}CMD: frida -H 127.0.0.1:27042 -f $package -l bypass.js --no-pause${C_RESET}"
+    echo ""
+    frida -H 127.0.0.1:27042 -f "$package" -l "$bypass_dst" --no-pause
+}
+
+# ─────────────────────────────────────────
 #  MAIN MENU
 # ─────────────────────────────────────────
 main_menu() {
@@ -700,12 +810,15 @@ main_menu() {
         echo -e "  ${C_GRAY}DEVICE${C_RESET}"
         echo -e "  ${C_WHITE}[7] Device Info${C_RESET}"
         echo ""
+        echo -e "  ${C_GRAY}PENTEST${C_RESET}"
+        echo -e "  ${C_YELLOW}[8] Frida SSL Bypass  (auto-start + inject)${C_RESET}"
+        echo ""
         echo -e "  ${C_GRAY}AI${C_RESET}"
         if $AI_ENABLED; then
-            echo -e "  ${C_MAGENTA}[8] AI Session Review  (analyze full log)${C_RESET}"
-            echo -e "  ${C_GRAY}[9] Disable AI Mode${C_RESET}"
+            echo -e "  ${C_MAGENTA}[9]  AI Session Review  (analyze full log)${C_RESET}"
+            echo -e "  ${C_GRAY}[10] Disable AI Mode${C_RESET}"
         else
-            echo -e "  ${C_GRAY}[8] Enable AI Mode  (Claude API)${C_RESET}"
+            echo -e "  ${C_GRAY}[9] Enable AI Mode  (Claude API)${C_RESET}"
         fi
         echo ""
         echo -e "  ${C_GRAY}[0] Exit${C_RESET}"
@@ -720,14 +833,15 @@ main_menu() {
             5) test_internet; test_adb; repair_frida_version ;;
             6) test_internet; test_adb; install_android_apps ;;
             7) test_adb; show_device_info ;;
-            8)
+            8) test_adb; ssl_bypass ;;
+            9)
                 if $AI_ENABLED; then
                     ai_log_review
                 else
                     enable_ai
                 fi
                 ;;
-            9)
+            10)
                 AI_ENABLED=false
                 ANTHROPIC_KEY=""
                 info "AI Mode disabled"

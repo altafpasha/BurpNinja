@@ -18,7 +18,7 @@
 [![Version](https://img.shields.io/badge/Version-2.0.0-green)](#)
 [![Author](https://img.shields.io/badge/Author-@altafpasha-purple)](#)
 
-*Automate your Android pentest environment — Burp cert, Frida, JADX, proxies — in one script.*
+*Automate your Android pentest environment — Burp cert, Frida, SSL bypass, JADX, proxies — in one script.*
 
 </div>
 
@@ -35,6 +35,7 @@
   - [Windows Edition](#windows-edition)
   - [Linux Edition](#linux-edition)
 - [Menu Options](#menu-options)
+- [Frida SSL Bypass](#frida-ssl-bypass)
 - [AI Mode (Claude API)](#ai-mode-claude-api)
 - [What Gets Installed](#what-gets-installed)
   - [PC Tools](#pc-tools)
@@ -54,7 +55,8 @@
 
 - Installing the **Burp Suite CA certificate** into the Android system trust store
 - Setting up **Frida** (via Magisk module or manual install)
-- Installing **proxy helper apps** on the device
+- **One-click SSL pinning bypass** via Frida injection (`bypass.js`)
+- Installing **proxy helper apps** and **app stores** on the device
 - Installing **PC-side analysis tools** (JADX, Apktool, Scrcpy, Objection)
 - **AI-powered error analysis** via Claude (optional)
 
@@ -75,9 +77,10 @@ Available in two editions:
 | 3 | **PC Tools** | Installs JADX, Apktool, Scrcpy, Frida, Objection |
 | 4 | **Frida Server** | Auto-detects Magisk or installs manually for any CPU arch |
 | 5 | **Frida Version Sync** | Detects and fixes PC ↔ Android version mismatch |
-| 6 | **Android Apps** | Installs ProxyToggle, ProxyDroid, ADB WiFi |
+| 6 | **Android Apps** | Installs ProxyToggle, ProxyDroid, ADB WiFi, F-Droid, Aurora Store |
 | 7 | **Device Info** | Shows model, brand, Android version, API level, CPU ABI, serial |
-| 8 | **AI Mode** | Claude API integration for real-time error diagnosis |
+| **8** | **🔥 Frida SSL Bypass** | Auto-starts frida-server and injects SSL pinning bypass |
+| 9 | **AI Mode** | Claude API integration for real-time error diagnosis |
 
 ---
 
@@ -88,18 +91,20 @@ Available in two editions:
 | Tool | Purpose | Install |
 |---|---|---|
 | **ADB** (Android Debug Bridge) | Communicate with device | [SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools) |
-| **OpenSSL** | Convert Burp certificate | [Win32 OpenSSL](https://slproweb.com/products/Win32OpenSSL.html) |
+| **OpenSSL** | Convert Burp certificate | Auto-installed via Scoop/winget or [Win32 OpenSSL](https://slproweb.com/products/Win32OpenSSL.html) |
 | **Python 3** | Install Frida & Objection | [python.org](https://www.python.org/downloads/) |
-| **Scoop** | Install JADX, Apktool, Scrcpy | [scoop.sh](https://scoop.sh) |
+| **Scoop** | Install JADX, Apktool, Scrcpy, OpenSSL | [scoop.sh](https://scoop.sh) |
 | **7-Zip** | Extract Frida `.xz` binaries | [7-zip.org](https://www.7-zip.org/) |
 | **PowerShell 5.1+** | Run the script | Built-in on Windows 10/11 |
+
+> **Note:** OpenSSL is now auto-installed via Scoop or winget if missing — no manual setup needed.
 
 ### Linux Requirements
 
 | Tool | Purpose | Install |
 |---|---|---|
 | **adb** | Communicate with device | `apt install adb` |
-| **openssl** | Convert Burp certificate | `apt install openssl` |
+| **openssl** | Convert Burp certificate | Auto-installed via apt/pacman/dnf if missing |
 | **curl** | Download files | `apt install curl` |
 | **python3-pip** | Install Frida & Objection | `apt install python3-pip` |
 | **unzip** | Extract APK zips | `apt install unzip` |
@@ -151,16 +156,20 @@ sudo bash BurpNinja.sh
   SETUP
   [1] Full Install (All)
   [2] Move Burp Certificate → Android System
-  [3] PC Tools  (JADX · Apktool · Scrcpy · Frida)
+  [3] PC Tools  (JADX · Apktool · Scrcpy · Frida · Objection)
   [4] Android Frida Server
   [5] Fix Frida Version Mismatch
-  [6] Android Apps  (ProxyToggle · ProxyDroid · ADBWifi)
+  [6] Android Apps  (ProxyToggle · ProxyDroid · ADBWifi · F-Droid · Aurora)
 
   DEVICE
   [7] Device Info
 
+  PENTEST
+  [8] Frida SSL Bypass  (auto-start + inject)
+
   AI
-  [8] Enable AI Mode  (Claude API)
+  [9]  Enable AI Mode  (Claude API)
+  [10] Disable AI Mode  (when enabled)
 
   [0] Exit
 ```
@@ -179,7 +188,7 @@ Runs all steps in sequence:
 
 #### `[2]` Burp Certificate
 - Downloads the DER cert from `http://<burp-ip>/cert`
-- Converts it to PEM using OpenSSL
+- Converts it to PEM using OpenSSL (auto-installs OpenSSL if missing)
 - Computes the subject hash and renames to `<hash>.0`
 - Pushes to `/system/etc/security/cacerts/` with correct permissions
 - Prompts to replace if already installed
@@ -208,9 +217,51 @@ Compares versions across PC, Android, and GitHub latest. Upgrades whichever is o
 | **ProxyToggle** | `com.kinandcarta.create.proxytoggle` | Toggle system proxy on/off |
 | **ProxyDroid** | `org.proxydroid` | Per-app proxy routing |
 | **ADB WiFi** | `com.sujanpoudel.adbwifi` | Wireless ADB connection |
+| **F-Droid** | `org.fdroid.fdroid` | Open-source app store |
+| **Aurora Store** | `com.aurora.store` | Google Play alternative (no account needed) |
 
 #### `[7]` Device Info
 Displays: Model, Brand, Android version, API level, CPU ABI, Serial number.
+
+---
+
+## Frida SSL Bypass
+
+Option `[8]` is BurpNinja's one-click SSL pinning bypass. It automates the full Frida injection workflow.
+
+### How It Works
+
+1. **Prompts for target package name** (e.g. `com.target.app`)
+2. **Prepares `bypass.js`** — copies from repo, or writes inline fallback
+3. **Restarts ADB** cleanly
+4. **Forwards Frida ports** `27042` and `27043`
+5. **Enables root** via `adb root`
+6. **Auto-detects frida-server** at `/system/xbin/` or `/data/local/tmp/`
+7. **Stops old frida-server** instance
+8. **Starts fresh frida-server** in background
+9. **Injects bypass** via `frida -H 127.0.0.1:27042 -f <package> -l bypass.js --no-pause`
+
+### What `bypass.js` Bypasses
+
+| Target | Method |
+|---|---|
+| **Standard TrustManager** | Replaces with custom `X509TrustManager` that accepts all certs |
+| **OkHttp3 CertificatePinner** | Hooks `check()` to silently pass |
+| **Android 7+ NetworkSecurityConfig** | Hooks `RootTrustManager.checkServerTrusted` |
+
+### Manual Usage
+
+You can also run `bypass.js` directly without the menu:
+
+```bash
+# Start frida-server first
+adb shell "su -c '/system/xbin/frida-server &'"
+
+# Inject bypass
+frida -H 127.0.0.1:27042 -f com.target.app -l bypass.js --no-pause
+```
+
+> **Prerequisite:** Run option `[4]` first to install Frida server on the device, and option `[3]` to install Frida tools on PC.
 
 ---
 
@@ -220,7 +271,7 @@ BurpNinja has an optional AI layer powered by **Anthropic Claude** that analyzes
 
 ### Enable AI Mode
 
-1. Select `[8]` from the menu
+1. Select `[9]` from the menu
 2. Enter your Anthropic API key (`sk-ant-...`)
 3. The key is validated with a test ping before activation
 
@@ -246,7 +297,7 @@ PREVENTION: Always start Burp before running BurpNinja
 
 ### AI Session Review
 
-When AI is enabled, option `[8]` changes to **AI Session Review** — sends the entire session log to Claude for a full summary of what succeeded, what failed, and a prioritized action plan.
+When AI is enabled, option `[9]` changes to **AI Session Review** — sends the entire session log to Claude for a full summary of what succeeded, what failed, and a prioritized action plan.
 
 > 🔒 Your API key is **never saved to disk**. It exists only in memory for the current session.
 
@@ -266,7 +317,13 @@ When AI is enabled, option `[8]` changes to **AI Session Review** — sends the 
 
 ### Android Apps
 
-Apps are installed directly to the connected device via `adb install`.
+| App | Installed via |
+|---|---|
+| ProxyToggle | `adb install` |
+| ProxyDroid | `adb install` |
+| ADB WiFi | `adb install` |
+| F-Droid | `adb install` |
+| Aurora Store | `adb install` |
 
 ### Frida Server
 
@@ -348,7 +405,9 @@ BurpNinja uses a two-tier root check:
 ## Troubleshooting
 
 ### `OpenSSL not found`
-**Windows:** Install from https://slproweb.com/products/Win32OpenSSL.html and add to PATH.
+BurpNinja will **auto-install** OpenSSL via Scoop or winget (Windows) / apt/pacman/dnf (Linux). If auto-install fails:
+- **Windows:** `scoop install openssl` or download from https://slproweb.com/products/Win32OpenSSL.html
+- **Linux:** `apt install openssl`
 
 ### `adb: device not found`
 - Check USB cable and enable USB Debugging
@@ -361,11 +420,14 @@ Use option `[5]` — Fix Frida Version Mismatch. It auto-upgrades both PC and An
 ### `su: Permission denied`
 The device is not rooted or the Superuser app hasn't granted ADB access. Open the Superuser/Magisk app and approve the permission request.
 
+### `frida-server not found on device`
+Run option `[4]` first to install Frida server. Then retry option `[8]`.
+
 ### `Certificate not trusted by app`
-Some apps use **SSL Pinning**. The certificate alone won't bypass this. Use Frida + Objection:
+Some apps use **SSL Pinning**. Use option `[8] Frida SSL Bypass` for automated bypass, or manually:
 ```bash
 objection -g <package.name> explore
-# then inside objection:
+# inside objection:
 android sslpinning disable
 ```
 
@@ -387,14 +449,13 @@ Or switch to **Windows Terminal** instead of the legacy `cmd` / old PowerShell h
 
 ```
 BurpNinja/
-├── BurpNinja.ps1          # Windows edition (PowerShell 5.1+)
-├── BurpNinja.sh           # Linux edition (Bash)
-├── README.md              # This file
-├── FIXES.md               # Changelog / bug fix notes
-└── .gitignore             # Excludes certs, binaries, logs from git
+├── BurpNinja.ps1    # Windows edition (PowerShell 5.1+)
+├── BurpNinja.sh     # Linux edition (Bash)
+├── bypass.js        # Frida SSL pinning bypass script
+├── README.md        # This file
+├── FIXES.md         # Changelog / bug fix notes
+└── .gitignore       # Excludes certs, binaries, logs from git
 ```
-
-> `android_setup_windows.ps1` and `android_burp.sh` are legacy v1 scripts — excluded from git via `.gitignore`.
 
 ---
 
