@@ -11,14 +11,14 @@
 
 <div align="center">
 
-**Android Pentesting Setup Toolkit**
+**Android Bug Hunting Lab Setup Toolkit**
 
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1+-blue?logo=windows)](#windows-edition)
 [![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux-edition)
 [![Version](https://img.shields.io/badge/Version-2.0.0-green)](#)
 [![Author](https://img.shields.io/badge/Author-@altafpasha-purple)](#)
 
-*Automate your Android pentest environment — Burp cert, Frida, SSL bypass, JADX, proxies — in one script.*
+*Stop wasting time on lab setup — get your Android bug hunting environment ready in minutes.*
 
 </div>
 
@@ -51,14 +51,17 @@
 
 ## Overview
 
-**BurpNinja** is a one-shot automation toolkit that sets up a complete Android pentesting environment. It handles:
+**BurpNinja** automates the repetitive lab setup that every Android bug hunter has to do before they can even start looking at an app.
 
-- Installing the **Burp Suite CA certificate** into the Android system trust store
-- Setting up **Frida** (via Magisk module or manual install)
-- **One-click SSL pinning bypass** via Frida injection (`bypass.js`)
-- Installing **proxy helper apps** and **app stores** on the device
-- Installing **PC-side analysis tools** (JADX, Apktool, Scrcpy, Objection)
-- **AI-powered error analysis** via Claude (optional)
+Every new target means the same manual work — converting and pushing Burp certs, matching Frida versions, installing the same apps, fighting OpenSSL path issues. BurpNinja does all of it in one script so you can skip straight to hunting.
+
+**What it sets up:**
+- **Burp Suite CA certificate** installed into the Android system trust store — intercept HTTPS from any app
+- **Frida server** matched to your device architecture — ready for dynamic analysis
+- **One-click SSL pinning bypass** via `bypass.js` — so pinning doesn't block your research
+- **Proxy helper apps and open-source app stores** pushed to the device
+- **PC-side analysis tools** (JADX, Apktool, Scrcpy, Objection) installed and ready
+- **AI-powered error analysis** via Claude — tells you exactly what broke and how to fix it (optional)
 
 Available in two editions:
 | Edition | Script | Platform |
@@ -461,10 +464,9 @@ BurpNinja/
 
 ## Disclaimer
 
-> This tool is intended for **authorized security testing and educational purposes only**.
-> Use BurpNinja only on devices and networks you own or have explicit written permission to test.
-> The author (`@altafpasha`) is not responsible for any misuse or damage caused by this tool.
-> Always comply with applicable laws and responsible disclosure guidelines.
+> BurpNinja is a **lab setup tool** intended for Android bug bounty research and security education on devices you own or have explicit permission to test.
+> Always practice responsible disclosure and comply with the scope and rules of the bug bounty program you are participating in.
+> The author (`@altafpasha`) is not responsible for any misuse of this tool.
 
 ---
 
