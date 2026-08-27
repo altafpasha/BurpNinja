@@ -7,12 +7,18 @@
 #  ██████╔╝╚██████╔╝██║  ██║██║     ██║ ╚████║██║██║ ╚████║╚█████╔╝██║  ██║
 #  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚════╝ ╚═╝  ╚═╝
 # ============================================================
-#  Android Pentesting Setup Toolkit  |  Linux Edition
+# ============================================================
+#  Android Pentesting Setup Toolkit  |  Linux & macOS Edition
 #  Author  : @altafpasha
-#  Version : 2.0.0
+#  Version : 2.1.0
 # ============================================================
 
 set -euo pipefail
+
+# ─────────────────────────────────────────
+#  ENVIRONMENT & PATH SETUP (macOS & Linux)
+# ─────────────────────────────────────────
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$HOME/Library/Android/sdk/platform-tools:$HOME/Library/Android/sdk/emulator:$HOME/Library/Android/sdk/cmdline-tools/latest/bin:${SUDO_USER:+/Users/$SUDO_USER/Library/Android/sdk/platform-tools}:${SUDO_USER:+/Users/$SUDO_USER/Library/Android/sdk/emulator}:$HOME/.local/bin:$PATH"
 
 # ─────────────────────────────────────────
 #  COLORS & SYMBOLS
@@ -42,7 +48,7 @@ BASE_DIR="/tmp/burpninja_workspace"
 LOG_FILE="/tmp/burpninja_log.txt"
 AI_ENABLED=false
 ANTHROPIC_KEY=""
-VERSION="2.0.0"
+VERSION="2.1.0"
 
 mkdir -p "$BASE_DIR"
 echo "BurpNinja v$VERSION started at $(date)" > "$LOG_FILE"
@@ -73,12 +79,16 @@ section() {
 }
 
 # ─────────────────────────────────────────
-#  ROOT CHECK
+#  ROOT / PRIVILEGE CHECK
 # ─────────────────────────────────────────
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        err "Run as root: sudo bash BurpNinja.sh"
-        exit 1
+        if [[ "$(uname -s)" == "Darwin" ]]; then
+            info "Running on macOS (${USER:-Apple}). Standard permissions."
+        else
+            err "Run as root: sudo bash BurpNinja.sh"
+            exit 1
+        fi
     fi
 }
 
@@ -97,9 +107,9 @@ show_banner() {
     echo ""
     echo -e "${C_GRAY}  ─────────────────────────────────────────────────────────────────────────${C_RESET}"
     if $AI_ENABLED; then
-        echo -e "   ${C_WHITE}Android Pentesting Setup Toolkit${C_RESET}  ${C_GRAY}│  Linux Edition  │  v${VERSION}${C_RESET}  ${C_MAGENTA}│  AI: ON ✦${C_RESET}"
+        echo -e "   ${C_WHITE}Android Pentesting Setup Toolkit${C_RESET}  ${C_GRAY}│  Linux & macOS  │  v${VERSION}${C_RESET}  ${C_MAGENTA}│  AI: ON ✦${C_RESET}"
     else
-        echo -e "   ${C_WHITE}Android Pentesting Setup Toolkit${C_RESET}  ${C_GRAY}│  Linux Edition  │  v${VERSION}  │  AI: OFF${C_RESET}"
+        echo -e "   ${C_WHITE}Android Pentesting Setup Toolkit${C_RESET}  ${C_GRAY}│  Linux & macOS  │  v${VERSION}  │  AI: OFF${C_RESET}"
     fi
     echo -e "   ${C_GRAY}Author: @altafpasha${C_RESET}"
     echo -e "${C_GRAY}  ─────────────────────────────────────────────────────────────────────────${C_RESET}"
@@ -107,15 +117,39 @@ show_banner() {
 }
 
 # ─────────────────────────────────────────
-#  DEPENDENCY CHECK
+#  DEPENDENCY & PACKAGE MANAGERS
 # ─────────────────────────────────────────
 require() {
     command -v "$1" &>/dev/null || { err "$1 not found. Install it first."; exit 1; }
 }
 
+get_brew_cmd() {
+    if command -v brew &>/dev/null; then
+        command -v brew
+    elif [[ -x "/opt/homebrew/bin/brew" ]]; then
+        echo "/opt/homebrew/bin/brew"
+    elif [[ -x "/usr/local/bin/brew" ]]; then
+        echo "/usr/local/bin/brew"
+    elif [[ -n "${SUDO_USER:-}" ]] && sudo -u "$SUDO_USER" command -v brew &>/dev/null; then
+        sudo -u "$SUDO_USER" which brew
+    else
+        echo ""
+    fi
+}
+
 install_pkg() {
     local pkg="$1"
-    if command -v apt-get &>/dev/null; then
+    local brew_bin
+    brew_bin=$(get_brew_cmd)
+
+    if [[ -n "$brew_bin" ]]; then
+        info "Installing $pkg via Homebrew..."
+        if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" ]]; then
+            sudo -u "$SUDO_USER" "$brew_bin" install "$pkg" && ok "Installed $pkg" || err "Failed to install $pkg via brew"
+        else
+            "$brew_bin" install "$pkg" && ok "Installed $pkg" || err "Failed to install $pkg via brew"
+        fi
+    elif command -v apt-get &>/dev/null; then
         apt-get install -y "$pkg" &>/dev/null && ok "Installed $pkg" || err "Failed to install $pkg"
     elif command -v pacman &>/dev/null; then
         pacman -S --noconfirm "$pkg" &>/dev/null && ok "Installed $pkg" || err "Failed to install $pkg"
@@ -316,6 +350,19 @@ test_burpsuite() {
     fi
 }
 
+adb_root_exec() {
+    local cmd="$1"
+    local whoami
+    whoami=$(adb shell id 2>/dev/null || true)
+    if echo "$whoami" | grep -q "uid=0"; then
+        adb shell "$cmd"
+    elif adb shell "su 0 id" 2>/dev/null | grep -q "uid=0"; then
+        adb shell "su 0 sh -c \"$cmd\""
+    else
+        adb shell "su -c \"$cmd\""
+    fi
+}
+
 test_adb() {
     section "ADB Connection"
     require adb
@@ -339,7 +386,7 @@ test_adb() {
     fi
 
     local root_test
-    root_test=$(timeout 6 adb shell "su -c 'echo __root_ok__'" 2>/dev/null || true)
+    root_test=$(adb_root_exec "echo __root_ok__" 2>/dev/null || true)
     if echo "$root_test" | grep -q "__root_ok__"; then
         ok "Root access OK (su available)"
     else
@@ -364,7 +411,7 @@ install_cert() {
         # Re-check after install attempt
         if ! command -v openssl &>/dev/null; then
             err "OpenSSL could not be installed automatically."
-            err "Install manually: apt install openssl  OR  pacman -S openssl  OR  dnf install openssl"
+            err "Install manually: apt install openssl  OR  pacman -S openssl  OR  dnf install openssl  OR  brew install openssl"
             ai_analyze "OpenSSL missing" "command -v openssl" "not found"
             return
         fi
@@ -372,7 +419,7 @@ install_cert() {
     fi
 
     local cert_exists
-    cert_exists=$(adb shell "su -c 'ls /system/etc/security/cacerts/'" 2>/dev/null | grep "9a5ba575.0" || true)
+    cert_exists=$(adb_root_exec "ls /system/etc/security/cacerts/" 2>/dev/null | grep "9a5ba575.0" || true)
 
     local proceed="y"
     if [[ -n "$cert_exists" ]]; then
@@ -384,7 +431,7 @@ install_cert() {
 
     info "Downloading certificate from Burp..."
     if ! curl -s --max-time 10 "http://${BURP_IP}/cert" -o cacert.der; then
-        err "Failed to download certificate"
+        err "Failed to download certificate from ${BURP_IP}"
         ai_analyze "Burp cert download failed" "curl http://${BURP_IP}/cert" "curl error"
         return
     fi
@@ -401,11 +448,11 @@ install_cert() {
 
     info "Remounting /system as rw..."
     adb remount >/dev/null 2>&1 || true
-    adb shell "su -c 'mount -o rw,remount /system'" >/dev/null 2>&1 || true
+    adb_root_exec "mount -o rw,remount /system" >/dev/null 2>&1 || true
 
-    adb shell "su -c 'mv /sdcard/${cert_name} /system/etc/security/cacerts/'" >/dev/null 2>&1
-    adb shell "su -c 'chmod 644 /system/etc/security/cacerts/${cert_name}'" >/dev/null 2>&1
-    adb shell "su -c 'chown root:root /system/etc/security/cacerts/${cert_name}'" >/dev/null 2>&1
+    adb_root_exec "mv /sdcard/${cert_name} /system/etc/security/cacerts/" >/dev/null 2>&1
+    adb_root_exec "chmod 644 /system/etc/security/cacerts/${cert_name}" >/dev/null 2>&1
+    adb_root_exec "chown root:root /system/etc/security/cacerts/${cert_name}" >/dev/null 2>&1
 
     ok "Certificate installed. Run: adb reboot"
     log "Cert installed: $cert_name" "INFO"
@@ -443,15 +490,36 @@ install_android_apps() {
         fi
     }
 
-    install_apk \
-        "com.kinandcarta.create.proxytoggle" "ProxyToggle" \
-        "https://github.com/theappbusiness/android-proxy-toggle/releases/download/v1.0.1/Proxy.Toggle.v1.0.1.zip" \
-        "proxytoggle.zip"
-    # zip needs unzip
-    if [[ -f "proxytoggle.zip" ]]; then
-        unzip -o proxytoggle.zip proxy-toggle.apk -d . >/dev/null 2>&1 || true
-        adb install -t -r proxy-toggle.apk >/dev/null 2>&1 || true
-        adb shell "pm grant com.kinandcarta.create.proxytoggle android.permission.WRITE_SECURE_SETTINGS" >/dev/null 2>&1 || true
+    # ProxyToggle (distributed inside zip release)
+    local pt_installed
+    pt_installed=$(adb shell "pm list packages" 2>/dev/null | grep "com.kinandcarta.create.proxytoggle" || true)
+    if [[ -n "$pt_installed" ]]; then
+        echo -e "  ${C_DGREEN}${OK} ProxyToggle already installed${C_RESET}"
+    else
+        info "Downloading ProxyToggle..."
+        if curl -sL "https://github.com/theappbusiness/android-proxy-toggle/releases/download/v1.0.1/Proxy.Toggle.v1.0.1.zip" -o "proxytoggle.zip" --max-time 60; then
+            unzip -o proxytoggle.zip -d . >/dev/null 2>&1 || true
+            local pt_apk=""
+            [[ -f "proxy-toggle.apk" ]] && pt_apk="proxy-toggle.apk"
+            [[ -f "Proxy.Toggle.v1.0.1.apk" ]] && pt_apk="Proxy.Toggle.v1.0.1.apk"
+            [[ -z "$pt_apk" ]] && pt_apk=$(find . -maxdepth 2 -name "*.apk" | grep -i "proxy.*toggle" | head -1 || true)
+
+            if [[ -n "$pt_apk" && -f "$pt_apk" ]]; then
+                local result
+                result=$(adb install -t -r "$pt_apk" 2>&1 || true)
+                if echo "$result" | grep -q "Success"; then
+                    adb shell "pm grant com.kinandcarta.create.proxytoggle android.permission.WRITE_SECURE_SETTINGS" >/dev/null 2>&1 || true
+                    ok "ProxyToggle installed"
+                else
+                    err "Install failed for ProxyToggle: $result"
+                    ai_analyze "APK install failed" "adb install $pt_apk" "$result"
+                fi
+            else
+                err "Failed to extract ProxyToggle APK from zip"
+            fi
+        else
+            err "Download failed for ProxyToggle"
+        fi
     fi
 
     install_apk \
@@ -471,7 +539,7 @@ install_android_apps() {
 
     install_apk \
         "com.aurora.store" "Aurora Store" \
-        "https://gitlab.com/AuroraOSS/AuroraStore/-/releases/permalink/latest/downloads/app-release.apk" \
+        "https://f-droid.org/repo/com.aurora.store_65.apk" \
         "aurora.apk"
 }
 
@@ -484,13 +552,23 @@ install_pc_tools() {
     # jadx
     if ! command -v jadx &>/dev/null; then
         info "Installing jadx..."
-        local ver
-        ver=$(curl -sI "https://github.com/skylot/jadx/releases/latest" | grep -i location | sed 's/.*\/v//' | tr -d '\r\n')
-        curl -sL "https://github.com/skylot/jadx/releases/download/v${ver}/jadx-${ver}.zip" -o jadx.zip --max-time 120
-        unzip -o jadx.zip -d /opt/jadx >/dev/null 2>&1 || true
-        ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx 2>/dev/null || true
-        ln -sf /opt/jadx/bin/jadx-gui /usr/local/bin/jadx-gui 2>/dev/null || true
-        ok "jadx installed"
+        local brew_bin
+        brew_bin=$(get_brew_cmd)
+        if [[ -n "$brew_bin" ]]; then
+            install_pkg jadx
+        else
+            local ver
+            ver=$(curl -sI "https://github.com/skylot/jadx/releases/latest" | grep -i location | sed 's/.*\/v//' | tr -d '\r\n')
+            curl -sL "https://github.com/skylot/jadx/releases/download/v${ver}/jadx-${ver}.zip" -o jadx.zip --max-time 120
+            mkdir -p /opt/jadx 2>/dev/null || mkdir -p "$HOME/.local/jadx"
+            local jadx_dir="/opt/jadx"
+            [[ ! -w "/opt" && -d "$HOME/.local/jadx" ]] && jadx_dir="$HOME/.local/jadx"
+            unzip -o jadx.zip -d "$jadx_dir" >/dev/null 2>&1 || true
+            mkdir -p /usr/local/bin 2>/dev/null || mkdir -p "$HOME/.local/bin"
+            ln -sf "$jadx_dir/bin/jadx" /usr/local/bin/jadx 2>/dev/null || ln -sf "$jadx_dir/bin/jadx" "$HOME/.local/bin/jadx" 2>/dev/null || true
+            ln -sf "$jadx_dir/bin/jadx-gui" /usr/local/bin/jadx-gui 2>/dev/null || ln -sf "$jadx_dir/bin/jadx-gui" "$HOME/.local/bin/jadx-gui" 2>/dev/null || true
+            ok "jadx installed"
+        fi
     else
         echo -e "  ${C_DGREEN}${OK} jadx already installed${C_RESET}"
     fi
@@ -529,7 +607,7 @@ install_pc_tools() {
     else
         info "Installing Frida + Objection..."
         local result
-        result=$($PIP install frida frida-tools objection 2>&1 || true)
+        result=$($PIP install frida frida-tools objection --break-system-packages 2>&1 || $PIP install frida frida-tools objection 2>&1 || true)
         if echo "$result" | grep -q "Successfully installed\|already satisfied"; then
             ok "Frida + Objection installed"
         else
@@ -543,10 +621,14 @@ install_pc_tools() {
 #  FRIDA SERVER
 # ─────────────────────────────────────────
 get_latest_github_release() {
-    curl -sI "https://github.com/$1/releases/latest" 2>/dev/null \
-        | grep -i location \
-        | sed 's/.*\/v//' \
-        | tr -d '\r\n' || echo ""
+    local repo="$1"
+    local loc
+    loc=$(curl -sI "https://github.com/${repo}/releases/latest" 2>/dev/null | grep -i "^location:" | head -1 | tr -d '\r\n')
+    if [[ -n "$loc" ]]; then
+        echo "$loc" | sed -E 's/.*\/tag\/v?//' | sed -E 's/.*\/v//' | tr -d ' '
+    else
+        echo ""
+    fi
 }
 
 install_magisk_module() {
@@ -556,14 +638,14 @@ install_magisk_module() {
     curl -sL "https://github.com/ViRb3/magisk-frida/releases/download/v${ver}/MagiskFrida-${ver}.zip" \
         -o frida_module.zip --max-time 120
     adb push frida_module.zip /data/local/tmp/ >/dev/null 2>&1
-    adb shell "su -c 'magisk --install-module /data/local/tmp/frida_module.zip'" >/dev/null 2>&1
+    adb_root_exec "magisk --install-module /data/local/tmp/frida_module.zip" >/dev/null 2>&1
     ok "MagiskFrida module installed"
 
     info "Downloading TrustUserCerts module..."
     curl -sL "https://github.com/NVISOsecurity/MagiskTrustUserCerts/releases/download/v0.4.1/AlwaysTrustUserCerts.zip" \
         -o trust_module.zip --max-time 60
     adb push trust_module.zip /data/local/tmp/ >/dev/null 2>&1
-    adb shell "su -c 'magisk --install-module /data/local/tmp/trust_module.zip'" >/dev/null 2>&1
+    adb_root_exec "magisk --install-module /data/local/tmp/trust_module.zip" >/dev/null 2>&1
     ok "TrustUserCerts module installed"
 }
 
@@ -579,32 +661,54 @@ install_frida_manual() {
         *)       err "Unknown CPU arch: $cpu"; return ;;
     esac
 
+    # Ensure xz decompressor is installed
+    if ! command -v xz &>/dev/null; then
+        info "Installing xz..."
+        install_pkg xz
+    fi
+
     local ver
     ver=$(get_latest_github_release "frida/frida")
+    [[ -z "$ver" ]] && ver="17.17.0"
     info "Frida v${ver} for ${arch} detected"
 
     local url="https://github.com/frida/frida/releases/download/${ver}/frida-server-${ver}-android-${arch}.xz"
+    rm -f frida-server frida-server.xz "frida-server-${ver}-android-${arch}"
+    info "Downloading Frida server from GitHub..."
     curl -sL "$url" -o frida-server.xz --max-time 300
-    xz -d frida-server.xz 2>/dev/null || true
 
-    local binary="frida-server-${ver}-android-${arch}"
-    [[ ! -f "$binary" ]] && binary="frida-server"
+    if [[ -f frida-server.xz ]]; then
+        xz -df frida-server.xz 2>/dev/null || true
+    fi
 
-    adb push "$binary" /data/local/tmp/frida-server >/dev/null 2>&1
-    adb shell "su -c 'chmod 755 /data/local/tmp/frida-server'" >/dev/null 2>&1
-    adb shell "su -c 'mount -o rw,remount /system'" >/dev/null 2>&1 || true
-    adb shell "su -c 'cp /data/local/tmp/frida-server /system/xbin/frida-server'" >/dev/null 2>&1
-    ok "Frida server installed at /system/xbin/frida-server"
-    echo -e "  ${C_DCYAN}Start: adb shell \"su -c 'frida-server &'\"${C_RESET}"
+    local binary="frida-server"
+    if [[ ! -f "$binary" && -f "frida-server-${ver}-android-${arch}" ]]; then
+        mv "frida-server-${ver}-android-${arch}" "$binary"
+    fi
+
+    if [[ -f "$binary" ]]; then
+        adb push "$binary" /data/local/tmp/frida-server >/dev/null 2>&1
+        adb_root_exec "chmod 755 /data/local/tmp/frida-server" >/dev/null 2>&1
+        adb_root_exec "mount -o rw,remount /system" >/dev/null 2>&1 || true
+        adb_root_exec "cp /data/local/tmp/frida-server /system/xbin/frida-server" >/dev/null 2>&1 || true
+        ok "Frida server installed at /data/local/tmp/frida-server"
+        echo -e "  ${C_DCYAN}Start: adb shell \"/data/local/tmp/frida-server &\"${C_RESET}"
+    else
+        err "Failed to extract frida-server binary"
+    fi
 }
 
 install_frida_android() {
     section "Frida Server (Android)"
-    local existing
-    existing=$(adb shell "frida-server --version" 2>/dev/null || true)
+    local existing=""
+    if adb shell "test -f /data/local/tmp/frida-server" &>/dev/null; then
+        existing=$(adb shell "/data/local/tmp/frida-server --version" 2>/dev/null | tr -d '\r\n' || true)
+    elif adb shell "test -f /system/xbin/frida-server" &>/dev/null; then
+        existing=$(adb shell "/system/xbin/frida-server --version" 2>/dev/null | tr -d '\r\n' || true)
+    fi
 
     if [[ -n "$existing" ]]; then
-        warn "Frida already installed: $existing"
+        warn "Frida already installed on Android: $existing"
         read -rp "  Upgrade/reinstall? [Y/N]: " choice
         [[ "$choice" =~ ^[Yy]$ ]] || return
     fi
@@ -623,22 +727,30 @@ repair_frida_version() {
     local latest pc_ver adb_ver
     latest=$(get_latest_github_release "frida/frida")
     pc_ver=$(frida --version 2>/dev/null | tr -d '\n' || echo "not installed")
-    adb_ver=$(adb shell "frida-server --version" 2>/dev/null | tr -d '\r\n' || echo "not installed")
+
+    if adb shell "test -f /data/local/tmp/frida-server" &>/dev/null; then
+        adb_ver=$(adb shell "/data/local/tmp/frida-server --version" 2>/dev/null | tr -d '\r\n' || echo "not installed")
+    elif adb shell "test -f /system/xbin/frida-server" &>/dev/null; then
+        adb_ver=$(adb shell "/system/xbin/frida-server --version" 2>/dev/null | tr -d '\r\n' || echo "not installed")
+    else
+        adb_ver=$(adb shell "frida-server --version" 2>/dev/null | tr -d '\r\n' || echo "not installed")
+    fi
+    [[ -z "$adb_ver" ]] && adb_ver="not installed"
 
     echo -e "  Latest   : ${C_WHITE}${latest}${C_RESET}"
     [[ "$pc_ver"  == "$latest" ]] && echo -e "  PC       : ${C_GREEN}${pc_ver}${C_RESET}"  || echo -e "  PC       : ${C_YELLOW}${pc_ver}${C_RESET}"
     [[ "$adb_ver" == "$latest" ]] && echo -e "  Android  : ${C_GREEN}${adb_ver}${C_RESET}" || echo -e "  Android  : ${C_YELLOW}${adb_ver}${C_RESET}"
     echo ""
 
-    if [[ "$pc_ver" == "$adb_ver" ]]; then
+    if [[ "$pc_ver" == "$adb_ver" && "$pc_ver" != "not installed" ]]; then
         ok "Versions in sync ($pc_ver)"
         return
     fi
 
     local PIP
     PIP=$(command -v pip3 || command -v pip)
-    [[ "$pc_ver" != "$latest" ]] && { info "Upgrading PC frida..."; $PIP install frida frida-tools --upgrade -q; }
-    [[ "$adb_ver" != "$latest" ]] && install_frida_android
+    [[ "$pc_ver" != "$latest" ]] && { info "Upgrading PC frida..."; $PIP install frida frida-tools --upgrade --break-system-packages -q 2>/dev/null || $PIP install frida frida-tools --upgrade -q; }
+    [[ "$adb_ver" != "$latest" ]] && install_frida_manual
     ok "Frida sync complete"
 }
 
@@ -702,14 +814,40 @@ ssl_bypass() {
     local bypass_src="$script_dir/bypass.js"
     local bypass_dst="$BASE_DIR/bypass.js"
 
-    if [[ -f "$bypass_src" ]]; then
+    if [[ "$bypass_src" != "$bypass_dst" && -f "$bypass_src" ]]; then
         cp "$bypass_src" "$bypass_dst"
         info "Using bypass.js from repo: $bypass_src"
+    elif [[ -f "$bypass_dst" ]]; then
+        info "Using bypass.js at: $bypass_dst"
     else
         # Inline fallback
         cat > "$bypass_dst" << 'BYPASS_EOF'
 Java.perform(function () {
     console.log("[+] BurpNinja SSL Bypass Active");
+
+    // Force Proxy Routing to Burp Suite (10.0.2.2:8080)
+    try {
+        var System = Java.use('java.lang.System');
+        System.setProperty('http.proxyHost', '10.0.2.2');
+        System.setProperty('http.proxyPort', '8080');
+        System.setProperty('https.proxyHost', '10.0.2.2');
+        System.setProperty('https.proxyPort', '8080');
+    } catch (e) {}
+
+    try {
+        var Proxy = Java.use('java.net.Proxy');
+        var InetSocketAddress = Java.use('java.net.InetSocketAddress');
+        var ProxyType = Java.use('java.net.Proxy$Type');
+        var burpProxy = Proxy.$new(ProxyType.HTTP.value, InetSocketAddress.$new('10.0.2.2', 8080));
+
+        var OkHttpClientBuilder = Java.use('okhttp3.OkHttpClient$Builder');
+        OkHttpClientBuilder.build.implementation = function () {
+            this.proxy(burpProxy);
+            return this.build();
+        };
+    } catch (e) {}
+
+    // TrustManager bypass
     var X509TrustManager = Java.use("javax.net.ssl.X509TrustManager");
     var SSLContext = Java.use("javax.net.ssl.SSLContext");
     var TrustManager = Java.registerClass({
@@ -730,26 +868,28 @@ Java.perform(function () {
         console.log("[+] SSL Pinning Bypassed!");
         SSLContext_init.call(this, km, [TrustManager.$new()], sr);
     };
+
+    // OkHttp3 CertificatePinner bypass
+    try {
+        var CertificatePinner = Java.use('okhttp3.CertificatePinner');
+        CertificatePinner.check.overload('java.lang.String', 'java.util.List').implementation = function () {};
+        CertificatePinner.check.overload('java.lang.String', '[Ljava.security.cert.Certificate;').implementation = function () {};
+    } catch (e) {}
+
+    // NetworkSecurityConfig bypass
+    try {
+        var NetworkSecurityConfig = Java.use('android.security.net.config.RootTrustManager');
+        NetworkSecurityConfig.checkServerTrusted.implementation = function () {};
+    } catch (e) {}
 });
 BYPASS_EOF
         info "bypass.js written to: $bypass_dst"
     fi
 
-    # ── Restart ADB ─────────────────────────────────
-    info "Restarting ADB..."
-    adb kill-server &>/dev/null || true
-    adb start-server &>/dev/null || true
-    adb wait-for-device &>/dev/null || true
-
     # ── Forward Frida ports ─────────────────────────
     info "Forwarding Frida ports (27042, 27043)..."
     adb forward tcp:27042 tcp:27042 &>/dev/null || true
     adb forward tcp:27043 tcp:27043 &>/dev/null || true
-
-    # ── Request root ──────────────────────────────────
-    info "Requesting ADB root..."
-    adb root &>/dev/null || true
-    sleep 2
 
     # ── Find frida-server on device ─────────────────────
     local frida_bin=""
@@ -770,13 +910,20 @@ BYPASS_EOF
 
     # ── Kill old instance ──────────────────────────────
     info "Stopping any existing frida-server..."
-    adb shell "pkill frida-server" &>/dev/null || true
+    adb shell "pkill -9 frida-server" &>/dev/null || true
     sleep 1
 
-    # ── Start frida-server ─────────────────────────────
-    info "Starting frida-server..."
-    adb shell "su -c '$frida_bin &'" &>/dev/null || true
-    sleep 3
+    # ── Start frida-server as non-blocking daemon ───────
+    info "Starting frida-server daemon..."
+    adb_root_exec "nohup $frida_bin >/dev/null 2>&1 &"
+    sleep 2
+
+    # Check if running, fallback to -D
+    if ! adb shell "pidof frida-server" &>/dev/null; then
+        adb_root_exec "$frida_bin -D" &>/dev/null || true
+        sleep 1
+    fi
+    ok "frida-server active on device"
 
     # ── Check PC frida ──────────────────────────────────
     if ! command -v frida &>/dev/null; then
@@ -787,9 +934,9 @@ BYPASS_EOF
     # ── Inject ─────────────────────────────────────────
     ok "Injecting SSL bypass into: $package"
     echo ""
-    echo -e "  ${C_DCYAN}CMD: frida -H 127.0.0.1:27042 -f $package -l bypass.js --no-pause${C_RESET}"
+    echo -e "  ${C_DCYAN}CMD: frida -U -f $package -l $bypass_dst${C_RESET}"
     echo ""
-    frida -H 127.0.0.1:27042 -f "$package" -l "$bypass_dst" --no-pause
+    frida -U -f "$package" -l "$bypass_dst"
 }
 
 # ─────────────────────────────────────────

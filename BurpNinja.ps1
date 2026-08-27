@@ -758,9 +758,9 @@ Java.perform(function () {
     # ── Inject SSL bypass ──────────────────────────────────
     OK "Injecting SSL bypass into: $package"
     Write-Host ""
-    Write-Host "  CMD: frida -H 127.0.0.1:27042 -f $package -l bypass.js --no-pause" -ForegroundColor DarkCyan
+    Write-Host "  CMD: frida -H 127.0.0.1:27042 -f $package -l bypass.js" -ForegroundColor DarkCyan
     Write-Host ""
-    & frida -H 127.0.0.1:27042 -f $package -l $bypassPath --no-pause
+    & frida -H 127.0.0.1:27042 -f $package -l $bypassPath
 }
 
 # ------------------------------------------------------------------------------

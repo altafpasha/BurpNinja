@@ -14,8 +14,9 @@
 **Android Bug Hunting Lab Setup Toolkit**
 
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1+-blue?logo=windows)](#windows-edition)
-[![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux-edition)
-[![Version](https://img.shields.io/badge/Version-2.0.0-green)](#)
+[![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux--macos-edition)
+[![macOS](https://img.shields.io/badge/macOS-Homebrew-lightgrey?logo=apple)](#linux--macos-edition)
+[![Version](https://img.shields.io/badge/Version-2.1.0-green)](#)
 [![Author](https://img.shields.io/badge/Author-@altafpasha-purple)](#)
 
 *Stop wasting time on lab setup — get your Android bug hunting environment ready in minutes.*
@@ -30,10 +31,10 @@
 - [Features](#features)
 - [Requirements](#requirements)
   - [Windows](#windows-requirements)
-  - [Linux](#linux-requirements)
+  - [Linux & macOS](#linux--macos-requirements)
 - [Installation](#installation)
   - [Windows Edition](#windows-edition)
-  - [Linux Edition](#linux-edition)
+  - [Linux & macOS Edition](#linux--macos-edition)
 - [Menu Options](#menu-options)
 - [Frida SSL Bypass](#frida-ssl-bypass)
 - [AI Mode (Claude API)](#ai-mode-claude-api)
@@ -67,7 +68,7 @@ Available in two editions:
 | Edition | Script | Platform |
 |---|---|---|
 | **Windows** | `BurpNinja.ps1` | PowerShell 5.1+ |
-| **Linux** | `BurpNinja.sh` | Bash (Debian/Arch/Fedora) |
+| **Linux & macOS** | `BurpNinja.sh` | Bash / Zsh (Debian, Arch, Fedora, macOS Homebrew) |
 
 ---
 
@@ -102,16 +103,16 @@ Available in two editions:
 
 > **Note:** OpenSSL is now auto-installed via Scoop or winget if missing — no manual setup needed.
 
-### Linux Requirements
+### Linux & macOS Requirements
 
-| Tool | Purpose | Install |
-|---|---|---|
-| **adb** | Communicate with device | `apt install adb` |
-| **openssl** | Convert Burp certificate | Auto-installed via apt/pacman/dnf if missing |
-| **curl** | Download files | `apt install curl` |
-| **python3-pip** | Install Frida & Objection | `apt install python3-pip` |
-| **unzip** | Extract APK zips | `apt install unzip` |
-| **xz-utils** | Extract Frida binary | `apt install xz-utils` |
+| Tool | Purpose | Linux Install | macOS Install |
+|---|---|---|---|
+| **adb** | Communicate with device | `apt install adb` | `brew install android-platform-tools` |
+| **openssl** | Convert Burp certificate | Auto-installed via apt/pacman/dnf | Auto-installed via `brew install openssl` |
+| **curl** | Download files | `apt install curl` | Pre-installed |
+| **python3-pip** | Install Frida & Objection | `apt install python3-pip` | `brew install python` |
+| **unzip** | Extract APK zips | `apt install unzip` | Pre-installed |
+| **xz-utils** | Extract Frida binary | `apt install xz-utils` | `brew install xz` |
 
 ---
 
@@ -139,15 +140,19 @@ powershell -ExecutionPolicy Bypass -File ".\BurpNinja.ps1"
 
 ---
 
-### Linux Edition
+### Linux & macOS Edition
 
 **Step 1 — Make the script executable**
 ```bash
 chmod +x BurpNinja.sh
 ```
 
-**Step 2 — Run as root**
+**Step 2 — Run the script**
 ```bash
+# macOS:
+./BurpNinja.sh
+
+# Linux:
 sudo bash BurpNinja.sh
 ```
 
@@ -242,7 +247,7 @@ Option `[8]` is BurpNinja's one-click SSL pinning bypass. It automates the full 
 6. **Auto-detects frida-server** at `/system/xbin/` or `/data/local/tmp/`
 7. **Stops old frida-server** instance
 8. **Starts fresh frida-server** in background
-9. **Injects bypass** via `frida -H 127.0.0.1:27042 -f <package> -l bypass.js --no-pause`
+9. **Injects bypass** via `frida -U -f <package> -l bypass.js`
 
 ### What `bypass.js` Bypasses
 
@@ -258,10 +263,10 @@ You can also run `bypass.js` directly without the menu:
 
 ```bash
 # Start frida-server first
-adb shell "su -c '/system/xbin/frida-server &'"
+adb shell "nohup /data/local/tmp/frida-server >/dev/null 2>&1 &"
 
 # Inject bypass
-frida -H 127.0.0.1:27042 -f com.target.app -l bypass.js --no-pause
+frida -U -f com.target.app -l bypass.js
 ```
 
 > **Prerequisite:** Run option `[4]` first to install Frida server on the device, and option `[3]` to install Frida tools on PC.
