@@ -13,9 +13,9 @@
 
 **Android Bug Hunting Lab Setup Toolkit**
 
-[![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1+-blue?logo=windows)](#windows-edition)
-[![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux--macos-edition)
-[![macOS](https://img.shields.io/badge/macOS-Homebrew-lightgrey?logo=apple)](#linux--macos-edition)
+[![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1+-blue?logo=windows)](#windows-guide)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%26%20Intel-lightgrey?logo=apple)](#macos-guide-how-to-use-on-macos)
+[![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux-guide)
 [![Version](https://img.shields.io/badge/Version-2.1.0-green)](#)
 [![Author](https://img.shields.io/badge/Author-@altafpasha-purple)](#)
 
@@ -30,14 +30,17 @@
 - [Overview](#overview)
 - [Features](#features)
 - [Requirements](#requirements)
+  - [macOS](#macos-requirements)
+  - [Linux](#linux-requirements)
   - [Windows](#windows-requirements)
-  - [Linux & macOS](#linux--macos-requirements)
-- [Installation](#installation)
-  - [Windows Edition](#windows-edition)
-  - [Linux & macOS Edition](#linux--macos-edition)
+- [Installation & How to Use](#installation--how-to-use)
+  - [macOS Guide (How to Use on macOS)](#macos-guide-how-to-use-on-macos)
+  - [Linux Guide](#linux-guide)
+  - [Windows Guide](#windows-guide)
 - [Menu Options](#menu-options)
 - [Frida SSL Bypass](#frida-ssl-bypass)
 - [AI Mode (Claude API)](#ai-mode-claude-api)
+- [AI Agent Skill](#ai-agent-skill)
 - [What Gets Installed](#what-gets-installed)
   - [PC Tools](#pc-tools)
   - [Android Apps](#android-apps)
@@ -45,6 +48,7 @@
 - [Burp Certificate Setup](#burp-certificate-setup)
 - [Device Requirements](#device-requirements)
 - [Troubleshooting](#troubleshooting)
+  - [macOS Specific Tips](#macos-specific-tips)
 - [File Structure](#file-structure)
 - [Disclaimer](#disclaimer)
 
@@ -61,14 +65,15 @@ Every new target means the same manual work — converting and pushing Burp cert
 - **Frida server** matched to your device architecture — ready for dynamic analysis
 - **One-click SSL pinning bypass** via `bypass.js` — so pinning doesn't block your research
 - **Proxy helper apps and open-source app stores** pushed to the device
-- **PC-side analysis tools** (JADX, Apktool, Scrcpy, Objection) installed and ready
+- **PC-side analysis tools** (JADX, Apktool, Scrcpy, Frida, Objection) installed and ready
 - **AI-powered error analysis** via Claude — tells you exactly what broke and how to fix it (optional)
 
-Available in two editions:
-| Edition | Script | Platform |
-|---|---|---|
-| **Windows** | `BurpNinja.ps1` | PowerShell 5.1+ |
-| **Linux & macOS** | `BurpNinja.sh` | Bash / Zsh (Debian, Arch, Fedora, macOS Homebrew) |
+Available in two editions across all major operating systems:
+| Edition | Script | Platform | Compatibility |
+|---|---|---|---|
+| **macOS** | `BurpNinja.sh` | Bash / Zsh | Apple Silicon (M1/M2/M3/M4) & Intel (x86_64) |
+| **Linux** | `BurpNinja.sh` | Bash | Debian, Ubuntu, Kali, Arch, Fedora |
+| **Windows** | `BurpNinja.ps1` | PowerShell 5.1+ | Windows 10 & 11 |
 
 ---
 
@@ -90,6 +95,34 @@ Available in two editions:
 
 ## Requirements
 
+### macOS Requirements
+
+BurpNinja runs natively on macOS (Apple Silicon M1/M2/M3/M4 & Intel) using [Homebrew](https://brew.sh).
+
+| Tool | Purpose | Install via Homebrew |
+|---|---|---|
+| **Homebrew** | Package manager | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` |
+| **adb** | Communicate with device | `brew install android-platform-tools` |
+| **openssl** | Convert Burp certificate | `brew install openssl` *(or auto-installed by script)* |
+| **python3 & pip** | Install Frida & Objection | `brew install python` |
+| **xz** | Extract Frida binaries | `brew install xz` |
+| **curl & unzip** | Download & extract tools | Pre-installed on macOS |
+
+> 💡 **Quick macOS Setup Command:**
+> ```bash
+> brew install android-platform-tools openssl python xz
+> ```
+
+### Linux Requirements
+
+| Tool | Purpose | Debian / Ubuntu / Kali | Arch Linux | Fedora |
+|---|---|---|---|---|
+| **adb** | Communicate with device | `sudo apt install adb` | `sudo pacman -S android-tools` | `sudo dnf install android-tools` |
+| **openssl** | Convert Burp certificate | `sudo apt install openssl` | `sudo pacman -S openssl` | `sudo dnf install openssl` |
+| **python3-pip** | Install Frida & Objection | `sudo apt install python3-pip` | `sudo pacman -S python-pip` | `sudo dnf install python3-pip` |
+| **xz-utils** | Extract Frida binary | `sudo apt install xz-utils` | `sudo pacman -S xz` | `sudo dnf install xz` |
+| **curl & unzip** | Download & extract tools | `sudo apt install curl unzip` | `sudo pacman -S curl unzip` | `sudo dnf install curl unzip` |
+
 ### Windows Requirements
 
 | Tool | Purpose | Install |
@@ -101,24 +134,81 @@ Available in two editions:
 | **7-Zip** | Extract Frida `.xz` binaries | [7-zip.org](https://www.7-zip.org/) |
 | **PowerShell 5.1+** | Run the script | Built-in on Windows 10/11 |
 
-> **Note:** OpenSSL is now auto-installed via Scoop or winget if missing — no manual setup needed.
+---
 
-### Linux & macOS Requirements
+## Installation & How to Use
 
-| Tool | Purpose | Linux Install | macOS Install |
-|---|---|---|---|
-| **adb** | Communicate with device | `apt install adb` | `brew install android-platform-tools` |
-| **openssl** | Convert Burp certificate | Auto-installed via apt/pacman/dnf | Auto-installed via `brew install openssl` |
-| **curl** | Download files | `apt install curl` | Pre-installed |
-| **python3-pip** | Install Frida & Objection | `apt install python3-pip` | `brew install python` |
-| **unzip** | Extract APK zips | `apt install unzip` | Pre-installed |
-| **xz-utils** | Extract Frida binary | `apt install xz-utils` | `brew install xz` |
+### macOS Guide (How to Use on macOS)
+
+BurpNinja is fully tested and optimized for macOS (supports Terminal, iTerm2, and Warp).
+
+#### Step 1 — Install Homebrew (if not already installed)
+If you don't have Homebrew installed, open Terminal and run:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+#### Step 2 — Install Recommended Dependencies
+```bash
+brew install android-platform-tools openssl python xz
+```
+*(BurpNinja will also attempt to auto-install missing packages via `brew` if needed)*
+
+#### Step 3 — Enable USB Debugging on your Android Device
+1. On your Android device, go to **Settings** → **About Phone** and tap **Build Number** 7 times to enable Developer Options.
+2. Go to **Settings** → **Developer Options** → enable **USB Debugging**.
+3. Connect the device to your Mac via USB. When macOS prompts *"Allow accessory to connect?"*, click **Allow**.
+4. Confirm device is recognized:
+   ```bash
+   adb devices
+   ```
+   *(If you're using an Android emulator like Android Studio AVD or Genymotion, start the emulator and verify with `adb devices`)*
+
+#### Step 4 — Start Burp Suite
+Open Burp Suite on your Mac and ensure the proxy listener is running (default: `127.0.0.1:8080`).
+
+#### Step 5 — Navigate to BurpNinja and Make Executable
+Open Terminal, navigate to the BurpNinja folder, and grant execute permissions:
+```bash
+cd /path/to/BurpNinja
+chmod +x BurpNinja.sh
+```
+
+#### Step 6 — Run BurpNinja
+Run the script as your standard user:
+```bash
+./BurpNinja.sh
+```
+
+> ⚠️ **Important macOS Note:** Do **NOT** use `sudo` on macOS. Running as standard user (`./BurpNinja.sh`) allows Homebrew and Python environments to install and manage packages cleanly in your user space without permission conflicts.
+
+#### Step 7 — Select an Option from the Interactive Menu
+- Enter `1` for **Full Install** (installs Burp cert, tools, frida-server, and pentesting apps in one go).
+- Enter `8` for **Frida SSL Bypass** to bypass SSL Pinning on your target app.
 
 ---
 
-## Installation
+### Linux Guide
 
-### Windows Edition
+**Step 1 — Enable USB Debugging on your Android device**
+> Settings → Developer Options → USB Debugging → ON
+
+**Step 2 — Connect your device and verify ADB**
+```bash
+adb devices
+```
+
+**Step 3 — Start Burp Suite** and ensure listener is on `127.0.0.1:8080`.
+
+**Step 4 — Make executable and run as root**
+```bash
+chmod +x BurpNinja.sh
+sudo bash BurpNinja.sh
+```
+
+---
+
+### Windows Guide
 
 **Step 1 — Enable USB Debugging on your Android device**
 > Settings → Developer Options → USB Debugging → ON
@@ -127,9 +217,8 @@ Available in two editions:
 ```powershell
 adb devices
 ```
-You should see your device listed as `device`.
 
-**Step 3 — Start Burp Suite** and ensure the proxy is running at `127.0.0.1:8080` (or your preferred IP/port).
+**Step 3 — Start Burp Suite** and ensure listener is on `127.0.0.1:8080`.
 
 **Step 4 — Run BurpNinja as Administrator**
 ```powershell
@@ -137,24 +226,6 @@ powershell -ExecutionPolicy Bypass -File ".\BurpNinja.ps1"
 ```
 
 > ⚠️ Must be run as **Administrator** (required to install system-level tools).
-
----
-
-### Linux & macOS Edition
-
-**Step 1 — Make the script executable**
-```bash
-chmod +x BurpNinja.sh
-```
-
-**Step 2 — Run the script**
-```bash
-# macOS:
-./BurpNinja.sh
-
-# Linux:
-sudo bash BurpNinja.sh
-```
 
 ---
 
@@ -311,6 +382,90 @@ When AI is enabled, option `[9]` changes to **AI Session Review** — sends the 
 
 ---
 
+## AI Agent Skill
+
+BurpNinja ships with a **universal, agent-agnostic AI skill** so any AI coding
+or security agent can run, configure, and troubleshoot it for you. It lives in
+[`.claude/skills/run-burpninja/`](.claude/skills/run-burpninja/) and is plain
+Markdown plus a portable bash driver — **no vendor API required** (works with
+Claude Code, Cursor, Windsurf, Cline, Roo Code, Continue, Aider, Copilot,
+Gemini CLI, Codex, OpenHands, Goose, and other Markdown/instruction-based
+agents).
+
+> This is different from **AI Mode** above. AI Mode is a *feature inside
+> BurpNinja* (menu `[9]`, Anthropic key). The **skill** teaches an external
+> agent how to drive BurpNinja, and needs no API key.
+
+### What's in it
+
+| File | Purpose |
+|---|---|
+| `SKILL.md` | Primary entry point — driver-first instructions, gotchas, safety |
+| `driver.sh` | The harness: `doctor` / `check` / `menu` / `tui` / `send` / `capture` / `kill` |
+| `references/*` | Deep per-topic docs (adb, burp, frida, ssl-pinning, per-OS, …) |
+| `examples/*` | Walk-throughs (first-time setup, emulator, physical device, …) |
+| `adapters/*` | Optional per-agent loading notes |
+
+### How to use it
+
+**Most agents discover it with zero setup** — the repo ships the standard
+agent entry-point files at the root, and each points to the skill (single
+source of truth, nothing to keep in sync):
+
+| Root file | Read by |
+|---|---|
+| [`AGENTS.md`](AGENTS.md) | Cross-tool standard — Codex, Cursor, Gemini CLI, Jules, **Antigravity**, Aider, Zed, Windsurf, Copilot, Devin, 30+ others |
+| [`CLAUDE.md`](CLAUDE.md) + [`.claude/skills/run-burpninja/`](.claude/skills/run-burpninja/) | Claude Code (auto-loads as `/run-burpninja`) |
+| [`GEMINI.md`](GEMINI.md) | Gemini CLI / Antigravity fallback |
+| [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | GitHub Copilot |
+
+**Claude Code** auto-discovers the skill — it appears as `/run-burpninja` and
+loads when you ask to "run BurpNinja", "set up the Android environment", or
+"figure out why BurpNinja isn't working".
+
+**Any other agent** — it likely reads `AGENTS.md` already; if not, point it at
+`SKILL.md` (that file works standalone):
+
+| Agent | Load it with |
+|---|---|
+| Codex / Antigravity / Cursor / Windsurf | auto via `AGENTS.md` |
+| Cline / Roo / Continue | add `SKILL.md` to context / `@files` |
+| GitHub Copilot | auto via `.github/copilot-instructions.md`, or `#file:…/SKILL.md` |
+| Gemini CLI / Code Assist | auto via `AGENTS.md` / `GEMINI.md`, or `@…/SKILL.md` |
+| Aider / other | auto via `AGENTS.md`, or `/read` the `SKILL.md` file |
+
+### Drive it directly (macOS / Linux)
+
+```bash
+# read-only environment report — run this first
+.claude/skills/run-burpninja/driver.sh doctor
+
+# static sanity check of the scripts
+.claude/skills/run-burpninja/driver.sh check
+
+# drive the menu headlessly (e.g. [3] PC Tools), then it auto-exits
+.claude/skills/run-burpninja/driver.sh menu 3
+
+# launch the live menu in tmux, press a key, snapshot, quit
+.claude/skills/run-burpninja/driver.sh tui
+.claude/skills/run-burpninja/driver.sh send 3
+.claude/skills/run-burpninja/driver.sh capture
+.claude/skills/run-burpninja/driver.sh kill
+```
+
+### Example prompts
+
+- "Run BurpNinja and show me the menu."
+- "Set up my Android pentest environment with BurpNinja."
+- "BurpNinja isn't working — figure out why." *(runs `doctor`, doesn't reinstall)*
+- "Check my Frida client/server versions are in sync."
+- "Bypass SSL pinning on `com.example.app` — I own it."
+
+Full details, security boundaries, and how to update the skill when BurpNinja
+changes are in [`.claude/skills/run-burpninja/README.md`](.claude/skills/run-burpninja/README.md).
+
+---
+
 ## What Gets Installed
 
 ### PC Tools
@@ -413,9 +568,10 @@ BurpNinja uses a two-tier root check:
 ## Troubleshooting
 
 ### `OpenSSL not found`
-BurpNinja will **auto-install** OpenSSL via Scoop or winget (Windows) / apt/pacman/dnf (Linux). If auto-install fails:
+BurpNinja will **auto-install** OpenSSL via Scoop or winget (Windows) / apt/pacman/dnf (Linux) / Homebrew (macOS). If auto-install fails:
+- **macOS:** `brew install openssl`
 - **Windows:** `scoop install openssl` or download from https://slproweb.com/products/Win32OpenSSL.html
-- **Linux:** `apt install openssl`
+- **Linux:** `sudo apt install openssl`
 
 ### `adb: device not found`
 - Check USB cable and enable USB Debugging
@@ -444,6 +600,35 @@ android sslpinning disable
 - Go to Burp → Proxy → Options → verify listener is on `127.0.0.1:8080`
 - If using a physical device on a different machine, use the machine's LAN IP
 
+### macOS Specific Tips
+
+#### `zsh: permission denied: ./BurpNinja.sh`
+Ensure you have granted execution permissions to the script:
+```bash
+chmod +x BurpNinja.sh
+```
+
+#### `brew: command not found` (Apple Silicon M1/M2/M3/M4)
+If Homebrew is installed but not in your PATH, add Homebrew to your environment:
+```bash
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+#### `adb: command not found` on macOS
+If installed via Homebrew:
+```bash
+brew install android-platform-tools
+```
+Or if using Android Studio SDK, add it to your `~/.zshrc`:
+```bash
+echo 'export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+#### macOS "Allow accessory to connect?" Prompt
+On macOS Ventura, Sonoma, and Sequoia, when plugging in your Android device via USB, macOS may display a system security dialog. Make sure to click **Allow** so ADB can communicate with the device.
+
 ### Banner shows garbled characters (Windows)
 The script sets UTF-8 encoding automatically. If it still garbles:
 ```powershell
@@ -458,9 +643,9 @@ Or switch to **Windows Terminal** instead of the legacy `cmd` / old PowerShell h
 ```
 BurpNinja/
 ├── BurpNinja.ps1    # Windows edition (PowerShell 5.1+)
-├── BurpNinja.sh     # Linux edition (Bash)
+├── BurpNinja.sh     # Linux & macOS edition (Bash / Zsh)
 ├── bypass.js        # Frida SSL pinning bypass script
-├── README.md        # This file
+├── README.md        # Documentation & usage guide
 ├── FIXES.md         # Changelog / bug fix notes
 └── .gitignore       # Excludes certs, binaries, logs from git
 ```
