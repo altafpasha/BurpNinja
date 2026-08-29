@@ -1,10 +1,10 @@
-```
-  ____                   _   _  _         _
- |  _ )_   _ _ __ _ __  | \ | |(_)_ __  (_) __ _
- | |_) | | | | '__| '_ \ |  \| || | '_ \ | |/ _`|
- |  _ <| |_| | |  | |_) || |\  || | | | || | (_| |
- |_|_\_\\__,_|_|  | .__/ |_| \_||_|_| |_||_|\__,_|
-                   |_|
+```text
+  ██████╗ ██╗   ██╗██████╗ ██████╗ ███╗   ██╗██╗███╗   ██╗     ██╗ █████╗ 
+  ██╔══██╗██║   ██║██╔══██╗██╔══██╗████╗  ██║██║████╗  ██║     ██║██╔══██╗
+  ██████╔╝██║   ██║██████╔╝██████╔╝██╔██╗ ██║██║██╔██╗ ██║     ██║███████║
+  ██╔══██╗██║   ██║██╔══██╗██╔═══╝ ██║╚██╗██║██║██║╚██╗██║██   ██║██╔══██║
+  ██████╔╝╚██████╔╝██║  ██║██║     ██║ ╚████║██║██║ ╚████║╚█████╔╝██║  ██║
+  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚════╝ ╚═╝  ╚═╝
 ```
 
 # BurpNinja
@@ -16,7 +16,7 @@
 [![Windows](https://img.shields.io/badge/Windows-PowerShell%205.1+-blue?logo=windows)](#windows-guide)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%26%20Intel-lightgrey?logo=apple)](#macos-guide-how-to-use-on-macos)
 [![Linux](https://img.shields.io/badge/Linux-Bash-orange?logo=linux)](#linux-guide)
-[![Version](https://img.shields.io/badge/Version-2.1.0-green)](#)
+[![Version](https://img.shields.io/badge/Version-2.2.0-green)](#)
 [![Author](https://img.shields.io/badge/Author-@altafpasha-purple)](#)
 
 *Stop wasting time on lab setup — get your Android bug hunting environment ready in minutes.*
