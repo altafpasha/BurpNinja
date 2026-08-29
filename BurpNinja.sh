@@ -15,6 +15,10 @@
 
 set -euo pipefail
 
+# Resolve the script's own directory NOW, before any `cd`, so relative
+# invocation (bash BurpNinja.sh) still finds repo files (e.g. bypass.js).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ─────────────────────────────────────────
 #  ENVIRONMENT & PATH SETUP (macOS & Linux)
 # ─────────────────────────────────────────
@@ -44,11 +48,19 @@ INFO="[*]"
 #  GLOBALS
 # ─────────────────────────────────────────
 BURP_IP="127.0.0.1:8080"
+BURP_AVAILABLE=true
 BASE_DIR="/tmp/burpninja_workspace"
 LOG_FILE="/tmp/burpninja_log.txt"
 AI_ENABLED=false
 ANTHROPIC_KEY=""
-VERSION="2.1.0"
+VERSION="2.2.0"
+
+# CLI flags (set by argument parser in main()). Defaults preserve the
+# original interactive behavior when the script is run with no arguments.
+DRY_RUN=false
+SAFE_MODE=false
+VERBOSE=false
+DEBUG=false
 
 mkdir -p "$BASE_DIR"
 echo "BurpNinja v$VERSION started at $(date)" > "$LOG_FILE"
@@ -168,7 +180,10 @@ ai_analyze() {
     local command="$2"
     local output="$3"
 
-    $AI_ENABLED || return
+    # Return 0 when AI is disabled: callers invoke this as a bare statement
+    # under `set -e`, so a non-zero return here would abort the whole script
+    # (this was silently killing the Burp/ADB/cert recovery prompts).
+    $AI_ENABLED || return 0
 
     section "AI Error Analysis"
     info "Sending error context to Claude AI..."
@@ -325,6 +340,34 @@ test_internet() {
     fi
 }
 
+# Best-effort attempt to launch a locally installed Burp Suite.
+# Returns 0 if a launch was actually attempted, 1 if none was found.
+launch_burp() {
+    case "$(uname -s)" in
+        Darwin)
+            local app
+            for app in "Burp Suite Community Edition" "Burp Suite Professional" "Burp Suite"; do
+                if open -a "$app" 2>/dev/null; then
+                    info "Launching '$app' — give it a few seconds to start."
+                    return 0
+                fi
+            done
+            ;;
+        Linux)
+            local bin
+            for bin in burpsuite BurpSuiteCommunity BurpSuitePro; do
+                if command -v "$bin" &>/dev/null; then
+                    nohup "$bin" >/dev/null 2>&1 &
+                    info "Launching '$bin' — give it a few seconds to start."
+                    return 0
+                fi
+            done
+            ;;
+    esac
+    warn "Couldn't find a Burp Suite installation to launch automatically."
+    return 1
+}
+
 test_burpsuite() {
     section "Burp Suite Proxy"
     local try_connect
@@ -333,21 +376,79 @@ test_burpsuite() {
     }
 
     if try_connect "$BURP_IP"; then
+        BURP_AVAILABLE=true
         ok "Burp Suite running at $BURP_IP"
-        return
+        return 0
     fi
 
     err "Burp Suite not detected at $BURP_IP"
     ai_analyze "Burp proxy unreachable" "curl http://${BURP_IP}/" "Connection refused"
+    echo ""
+    echo -e "  ${C_WHITE}Burp Suite isn't reachable at ${BURP_IP}.${C_RESET}"
+    echo -e "  ${C_GRAY}Start Burp Suite, then in Proxy > Proxy settings make sure a listener${C_RESET}"
+    echo -e "  ${C_GRAY}is on ${BURP_IP} (bind to 'All interfaces' for a physical device).${C_RESET}"
 
-    read -rp "  Enter Burp proxy (e.g. 192.168.1.10:8080): " custom_ip
-    if try_connect "$custom_ip"; then
-        BURP_IP="$custom_ip"
-        ok "Burp Suite running at $BURP_IP"
-    else
-        err "Cannot reach Burp at $custom_ip. Exiting."
-        exit 1
+    BURP_AVAILABLE=false
+
+    # Dry-run or no interactive terminal: don't block — report and move on.
+    if $DRY_RUN; then
+        warn "Dry-run: skipping Burp start prompt."
+        return 0
     fi
+    if [[ ! -t 0 ]]; then
+        warn "No interactive terminal — start Burp and re-run. Continuing without it."
+        return 0
+    fi
+
+    local choice custom_ip i
+    while true; do
+        echo ""
+        echo -e "  ${C_WHITE}[1]${C_RESET} Retry — I've started Burp"
+        echo -e "  ${C_WHITE}[2]${C_RESET} Enter a different proxy address"
+        echo -e "  ${C_WHITE}[3]${C_RESET} Try to launch Burp Suite for me"
+        echo -e "  ${C_WHITE}[4]${C_RESET} Skip Burp for now (cert step will be skipped)"
+        echo -e "  ${C_WHITE}[0]${C_RESET} Cancel"
+        read -rp "  Select: " choice || choice=""
+        case "$choice" in
+            1)
+                if try_connect "$BURP_IP"; then
+                    BURP_AVAILABLE=true; ok "Burp Suite running at $BURP_IP"; return 0
+                else err "Still not reachable at $BURP_IP."; fi
+                ;;
+            2)
+                read -rp "  Enter Burp proxy (e.g. 192.168.1.10:8080): " custom_ip || custom_ip=""
+                custom_ip="${custom_ip// /}"
+                if [[ -n "$custom_ip" ]] && try_connect "$custom_ip"; then
+                    BURP_IP="$custom_ip"; BURP_AVAILABLE=true
+                    ok "Burp Suite running at $BURP_IP"; return 0
+                else err "Cannot reach Burp at ${custom_ip:-<empty>}."; fi
+                ;;
+            3)
+                if launch_burp; then
+                    info "Waiting for Burp to come up (up to ~20s)..."
+                    for i in 1 2 3 4 5 6 7 8 9 10; do
+                        sleep 2
+                        if try_connect "$BURP_IP"; then
+                            BURP_AVAILABLE=true; ok "Burp Suite running at $BURP_IP"; return 0
+                        fi
+                    done
+                    warn "Burp still not reachable at $BURP_IP. Once it's up, choose [1] Retry."
+                fi
+                ;;
+            4)
+                warn "Skipping Burp. The certificate step will be skipped; other steps continue."
+                BURP_AVAILABLE=false
+                return 0
+                ;;
+            0|"")
+                info "Cancelled. Start Burp Suite, then run BurpNinja again."
+                exit 0
+                ;;
+            *)
+                err "Invalid option"
+                ;;
+        esac
+    done
 }
 
 adb_root_exec() {
@@ -403,6 +504,11 @@ test_adb() {
 # ─────────────────────────────────────────
 install_cert() {
     section "Burp Certificate"
+    # Skip cleanly if Burp was unavailable/skipped (needs the proxy to fetch the cert).
+    if ! ${BURP_AVAILABLE:-true}; then
+        warn "Burp not available — skipping certificate install."
+        return
+    fi
     # Auto-install OpenSSL if missing
     if ! command -v openssl &>/dev/null; then
         warn "OpenSSL not found. Attempting auto-install..."
@@ -809,9 +915,9 @@ ssl_bypass() {
     fi
 
     # ── Locate bypass.js ────────────────────────────
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local bypass_src="$script_dir/bypass.js"
+    # Use SCRIPT_DIR captured at startup (before any cd) so the repo's
+    # maintained bypass.js is found reliably, not the inline fallback.
+    local bypass_src="$SCRIPT_DIR/bypass.js"
     local bypass_dst="$BASE_DIR/bypass.js"
 
     if [[ "$bypass_src" != "$bypass_dst" && -f "$bypass_src" ]]; then
@@ -1002,8 +1108,298 @@ main_menu() {
     done
 }
 
+# ═════════════════════════════════════════════════════════════
+#  CLI LAYER  (added in v2.2.0 — 100% backward compatible)
+#  Running with no arguments still launches the interactive menu.
+#  New non-interactive subcommands: doctor · status · setup ·
+#  help · version, plus global flags --dry-run/--safe/--verbose.
+# ═════════════════════════════════════════════════════════════
+
+# Dry-run helper: print an action instead of performing it.
+would() { echo -e "  ${C_GRAY}[dry-run] would ${1}${C_RESET}"; }
+
+# ── Doctor status printers + counters ────────────────────────
+D_PASS=0; D_WARN=0; D_FAIL=0; D_NONE=0
+d_pass() { D_PASS=$((D_PASS+1)); echo -e "  ${C_GREEN}[✓] PASS${C_RESET}  $1"; }
+d_warn() { D_WARN=$((D_WARN+1)); echo -e "  ${C_YELLOW}[!] WARN${C_RESET}  $1"; }
+d_fail() { D_FAIL=$((D_FAIL+1)); echo -e "  ${C_RED}[✗] FAIL${C_RESET}  $1"; }
+d_none() { D_NONE=$((D_NONE+1)); echo -e "  ${C_GRAY}[○] N/A ${C_RESET}  $1"; }
+d_fix()  {
+    echo -e "          ${C_GRAY}Problem: $1${C_RESET}"
+    echo -e "          ${C_GRAY}Cause:   $2${C_RESET}"
+    echo -e "          ${C_GREEN}Fix:     $3${C_RESET}"
+}
+
+# Report a tool: severity(req|opt), name, then a version command.
+d_tool() {
+    local sev="$1" name="$2"; shift 2
+    if command -v "$name" &>/dev/null; then
+        local v; v="$("$@" 2>/dev/null | head -1 | tr -d '\r')"
+        d_pass "$(printf '%-10s %s' "$name" "${v:-installed}")"
+    elif [[ "$sev" == req ]]; then
+        d_fail "$(printf '%-10s not found' "$name")"
+        d_fix "$name is required and not installed" \
+              "Missing from PATH or not installed" \
+              "See references/installation.md (brew/apt/pacman/dnf install $name)"
+    else
+        d_warn "$(printf '%-10s not found (optional)' "$name")"
+    fi
+}
+
+# ── Shared read-only device detection (never exits) ──────────
+# Echoes: state|model|android|api|abi|root
+detect_device() {
+    local state model android api abi root uid
+    state="$(adb get-state 2>/dev/null | tr -d '\r' || true)"
+    if [[ "$state" != "device" ]]; then echo "none|||||"; return; fi
+    model="$(adb shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+    android="$(adb shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')"
+    api="$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+    abi="$(adb shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')"
+    uid="$(adb shell id 2>/dev/null | tr -d '\r')"
+    if echo "$uid" | grep -q "uid=0"; then root="yes (adb root)"
+    elif adb shell "su 0 id" 2>/dev/null | grep -q "uid=0"; then root="yes (su)"
+    elif adb shell "su -c id" 2>/dev/null | grep -q "uid=0"; then root="yes (su)"
+    else root="no"; fi
+    echo "device|$model|$android|$api|$abi|$root"
+}
+
+# ── doctor : comprehensive read-only health check ────────────
+cmd_doctor() {
+    local script_dir="$SCRIPT_DIR"
+    echo ""
+    echo -e "  ${C_BOLD}BurpNinja Doctor${C_RESET}  ${C_GRAY}read-only environment health check · v${VERSION}${C_RESET}"
+
+    section "System"
+    d_pass "$(printf '%-10s %s' OS "$(uname -s) $(uname -m)")"
+    d_pass "$(printf '%-10s %s' shell "bash ${BASH_VERSION}")"
+    if [[ $EUID -eq 0 ]]; then d_pass "$(printf '%-10s %s' privileges root)"
+    else d_pass "$(printf '%-10s %s' privileges "user ($(id -un))")"; fi
+
+    section "Tools"
+    d_tool req adb      adb --version
+    d_tool req python3  python3 --version
+    d_tool req openssl  openssl version
+    d_tool opt frida    frida --version
+    d_tool opt objection objection version
+    d_tool opt jadx     jadx --version
+    d_tool opt apktool  apktool --version
+    d_tool opt scrcpy   scrcpy --version
+    d_tool opt xz       xz --version
+
+    section "Android"
+    if command -v adb &>/dev/null; then
+        local d; d="$(detect_device)"
+        local state="${d%%|*}"
+        if [[ "$state" == "device" ]]; then
+            IFS='|' read -r _ model android api abi root <<< "$d"
+            d_pass "$(printf '%-10s %s' device "${model:-unknown}")"
+            d_pass "$(printf '%-10s %s' android "${android:-?} / API ${api:-?}")"
+            d_pass "$(printf '%-10s %s' abi "${abi:-?}")"
+            if [[ "$root" == yes* ]]; then d_pass "$(printf '%-10s %s' root "$root")"
+            else
+                d_fail "$(printf '%-10s %s' root no)"
+                d_fix "Device is not rooted" \
+                      "System-cert install and frida-server require root" \
+                      "Use a rooted device/emulator (rootAVD, Genymotion, Magisk)"
+            fi
+        else
+            d_none "$(printf '%-10s %s' device "none connected")"
+            d_fix "No ADB device detected" \
+                  "Device off/unplugged, USB debugging off, or unauthorized" \
+                  "Connect + authorize the device, or start an emulator; see references/adb.md"
+        fi
+    else
+        d_none "device      (adb not installed)"
+    fi
+
+    section "Burp Suite"
+    if command -v curl &>/dev/null && \
+       curl -s --max-time 4 "http://${BURP_IP}/" 2>/dev/null | grep -qi "burp\|proxy"; then
+        d_pass "$(printf '%-10s %s' listener "${BURP_IP} reachable")"
+    else
+        d_none "$(printf '%-10s %s' listener "${BURP_IP} not reachable")"
+        d_fix "Burp proxy not reachable at ${BURP_IP}" \
+              "Burp not running, or listener bound to a different host/port" \
+              "Start Burp; Proxy > Options > listener ${BURP_IP} (all interfaces for LAN devices)"
+    fi
+
+    section "Frida"
+    local pc_ver dev_ver
+    pc_ver="$(command -v frida &>/dev/null && frida --version 2>/dev/null | tr -d '\r' || echo '')"
+    [[ -n "$pc_ver" ]] && d_pass "$(printf '%-10s %s' client "$pc_ver")" \
+                       || d_warn "$(printf '%-10s %s' client "not installed")"
+    dev_ver=""
+    if command -v adb &>/dev/null && [[ "$(adb get-state 2>/dev/null | tr -d '\r')" == "device" ]]; then
+        for loc in /data/local/tmp/frida-server /system/xbin/frida-server; do
+            if adb shell "test -f $loc" &>/dev/null; then
+                dev_ver="$(adb shell "$loc --version" 2>/dev/null | tr -d '\r')"; break
+            fi
+        done
+        if [[ -n "$dev_ver" ]]; then
+            d_pass "$(printf '%-10s %s' server "$dev_ver")"
+            if [[ -n "$pc_ver" && "$pc_ver" != "$dev_ver" ]]; then
+                d_fail "$(printf '%-10s %s' match "client $pc_ver != server $dev_ver")"
+                d_fix "Frida client/server version mismatch" \
+                      "PC and device Frida versions differ" \
+                      "Run BurpNinja menu [5] (Fix Frida Version Mismatch)"
+            elif [[ -n "$pc_ver" ]]; then
+                d_pass "$(printf '%-10s %s' match "in sync ($pc_ver)")"
+            fi
+        else
+            d_none "$(printf '%-10s %s' server "not on device")"
+        fi
+    else
+        d_none "$(printf '%-10s %s' server "no device")"
+    fi
+
+    section "Security"
+    d_pass "downloads use HTTPS"
+    d_warn "no checksum/signature verification of downloaded binaries yet (roadmap)"
+
+    echo ""
+    echo -e "  ${C_GRAY}────────────────────────────────────────────────${C_RESET}"
+    echo -e "  Summary: ${C_GREEN}${D_PASS} pass${C_RESET} · ${C_YELLOW}${D_WARN} warn${C_RESET} · ${C_RED}${D_FAIL} fail${C_RESET} · ${C_GRAY}${D_NONE} n/a${C_RESET}"
+    $VERBOSE && echo -e "  ${C_GRAY}scripts: $script_dir${C_RESET}"
+    echo ""
+    [[ $D_FAIL -gt 0 ]] && return 1 || return 0
+}
+
+# ── status : compact READY dashboard (read-only) ─────────────
+cmd_status() {
+    echo ""
+    echo -e "  ${C_BOLD}BurpNinja${C_RESET}  ${C_GRAY}Android Security Testing Toolkit · v${VERSION}${C_RESET}"
+    echo ""
+    local dev="not connected" andr="—" root="—" adbs="not found" burp="not reachable" frida_c="not installed" proxy="$BURP_IP"
+    command -v adb &>/dev/null && adbs="installed"
+    local d; d="$(detect_device)"
+    if [[ "${d%%|*}" == "device" ]]; then
+        IFS='|' read -r _ model android api rroot <<< "$d"; :
+        # re-parse with abi
+        IFS='|' read -r _ model android api abi rroot <<< "$d"
+        dev="$model"; andr="${android} / API ${api}"; root="$rroot"; adbs="connected"
+    fi
+    command -v frida &>/dev/null && frida_c="$(frida --version 2>/dev/null | tr -d '\r')"
+    command -v curl &>/dev/null && curl -s --max-time 3 "http://${BURP_IP}/" 2>/dev/null | grep -qi "burp\|proxy" && burp="connected"
+    printf "  %-12s %s\n" "Device"  "$dev"
+    printf "  %-12s %s\n" "Android" "$andr"
+    printf "  %-12s %s\n" "Root"    "$root"
+    printf "  %-12s %s\n" "ADB"     "$adbs"
+    printf "  %-12s %s\n" "Burp"    "$burp"
+    printf "  %-12s %s\n" "Frida"   "$frida_c"
+    printf "  %-12s %s\n" "Proxy"   "$proxy"
+    echo ""
+    echo -e "  ${C_GRAY}Run './BurpNinja.sh doctor' for a full health check, or './BurpNinja.sh' for the menu.${C_RESET}"
+    echo ""
+}
+
+# ── setup : guided full install (honors --dry-run/--safe) ────
+cmd_setup() {
+    if $SAFE_MODE; then
+        warn "Safe mode: read-only. Running diagnostics instead of setup."
+        cmd_doctor; return $?
+    fi
+    if $DRY_RUN; then
+        section "Setup plan (dry-run — no changes made)"
+        would "verify internet connectivity"
+        would "verify Burp proxy at ${BURP_IP}"
+        would "verify ADB device + root access"
+        would "install PC tools (jadx, apktool, scrcpy, frida, objection)"
+        would "install Android helper apps (ProxyToggle, ProxyDroid, ADBWifi, F-Droid, Aurora)"
+        would "install/verify frida-server for the device ABI"
+        would "install the Burp CA certificate into the system trust store"
+        echo ""
+        info "Dry-run complete. Re-run 'setup' without --dry-run to apply."
+        return 0
+    fi
+    check_root
+    install_all
+}
+
+# ── help ─────────────────────────────────────────────────────
+cmd_help() {
+    cat <<EOF
+
+  BurpNinja v${VERSION} — Android Security Testing Toolkit
+  Author: @altafpasha
+
+  USAGE
+    ./BurpNinja.sh [command] [options]
+    ./BurpNinja.sh                 Launch the interactive menu (default)
+
+  COMMANDS
+    doctor       Read-only environment health check (System/Tools/Android/Burp/Frida)
+    status       Compact readiness dashboard
+    setup        Guided full install (internet, Burp, ADB, tools, frida, cert)
+    menu         Launch the interactive menu explicitly
+    version      Print the version
+    help         Show this help
+
+  OPTIONS
+    --dry-run    Show what would happen; make no changes
+    --safe       Diagnostic-only mode (read-only; no install/config)
+    --verbose    Extra detail in output
+    --debug      Trace execution (implies --verbose)
+    -h, --help   Show this help
+    -v, --version  Print the version
+
+  EXAMPLES
+    ./BurpNinja.sh doctor            Check if the environment is ready
+    ./BurpNinja.sh status            Quick device/Burp/Frida snapshot
+    ./BurpNinja.sh setup --dry-run   Preview setup steps, change nothing
+    ./BurpNinja.sh                   Full interactive menu (unchanged)
+
+  TROUBLESHOOTING
+    Only the banner prints then it exits  ->  run: TERM=xterm ./BurpNinja.sh
+    A menu action quits the whole script  ->  a precondition failed; run 'doctor'
+    Linux "Run as root"                   ->  use: sudo bash BurpNinja.sh
+
+  Docs & AI skill: .claude/skills/run-burpninja/  ·  AGENTS.md
+
+EOF
+}
+
+cmd_version() { echo "BurpNinja v${VERSION}"; }
+
+# ── argument dispatcher ──────────────────────────────────────
+main() {
+    local cmd=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)          DRY_RUN=true ;;
+            --safe|--safe-mode) SAFE_MODE=true ;;
+            --verbose)          VERBOSE=true ;;
+            --debug)            DEBUG=true; VERBOSE=true ;;
+            -h|--help|help)     cmd="help" ;;
+            -v|--version|version) cmd="version" ;;
+            doctor|status|setup|menu) cmd="$1" ;;
+            *)
+                if [[ -z "$cmd" ]]; then
+                    err "Unknown command or option: $1"
+                    cmd="help"
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    $DEBUG && set -x
+
+    case "$cmd" in
+        help)    cmd_help ;;
+        version) cmd_version ;;
+        doctor)  cmd_doctor ;;
+        status)  cmd_status ;;
+        setup)   cmd_setup ;;
+        menu)    check_root; main_menu ;;
+        "")
+            if $SAFE_MODE; then cmd_doctor
+            else check_root; main_menu; fi
+            ;;
+    esac
+}
+
 # ─────────────────────────────────────────
 #  ENTRY
 # ─────────────────────────────────────────
-check_root
-main_menu
+main "$@"

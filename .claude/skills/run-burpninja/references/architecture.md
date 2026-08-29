@@ -7,13 +7,24 @@ editions:
 
 | File | Platform | Shell | Version string in repo |
 |---|---|---|---|
-| `BurpNinja.sh` | macOS & Linux | Bash (works on macOS bash 3.2) | `VERSION="2.1.0"` |
+| `BurpNinja.sh` | macOS & Linux | Bash (works on macOS bash 3.2) | `VERSION="2.2.0"` |
 | `BurpNinja.ps1` | Windows 10/11 | PowerShell 5.1+ | `$script:Version = "2.0.0"` |
 | `bypass.js` | device (Frida/ART) | Frida JS | header says `Version : 1.0` |
 
-There is no build step, no package manifest, no test suite. "Running" it means
-launching the menu and selecting numbered options. That is why the skill ships
-a driver: an agent needs a programmatic handle on an interactive menu.
+There is no build step, no package manifest, no test suite. Running with **no
+arguments** launches the interactive menu and you select numbered options —
+that is why the skill ships a driver: an agent needs a programmatic handle on
+an interactive menu.
+
+Since **v2.2.0** the `.sh` edition also has a **non-interactive CLI layer**
+(added in a `main()` argument dispatcher at the bottom of the file, fully
+backward compatible): `doctor`, `status`, `setup`, `menu`, `help`, `version`,
+plus global flags `--dry-run` / `--safe` / `--verbose` / `--debug`. `doctor`
+is a read-only health check that never triggers the `exit 1` menu-precondition
+helpers and returns non-zero if any check FAILs. `SCRIPT_DIR` is captured at
+startup (before the top-level `cd "$BASE_DIR"`) so repo files like `bypass.js`
+resolve regardless of the working directory. The PowerShell edition does not
+yet have this CLI layer (v2.0.0) — a documented future-parity item.
 
 ## Components
 
@@ -115,6 +126,7 @@ operate against a newer BurpNinja:
 5. Never blindly run a command from an old reference — confirm the function
    still exists (e.g. `grep -n install_frida_manual BurpNinja.sh`).
 
-Observed drift already worth noting: the `.sh` edition is `2.1.0` and the
-`.ps1` edition is `2.0.0`; `README.md` mentions a `FIXES.md` that is **not
-present** in the repo. Always trust the scripts over prose.
+Observed drift already worth noting: the `.sh` edition is `2.2.0` (has the CLI
+layer) and the `.ps1` edition is `2.0.0` (menu only, no subcommands);
+`README.md` mentions a `FIXES.md` that is **not present** in the repo. Always
+trust the scripts over prose.

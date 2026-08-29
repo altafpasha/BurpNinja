@@ -51,6 +51,12 @@ server · `5` Fix Frida version · `6` Android apps · `7` Device info · `8`
 connected, rooted device and **`exit` the whole script** if the precondition
 fails — see the Gotchas in `SKILL.md`.
 
+`BurpNinja.sh` itself (v2.2.0+) also has native, non-interactive subcommands —
+`./BurpNinja.sh doctor` (read-only health check), `status`, `setup [--dry-run]`,
+`--help`, `version` — with no args still opening the menu. The `driver.sh`
+above stays the agent path (it adds live TUI driving and works from anywhere);
+the native subcommands are the end-user CLI.
+
 ## Behavioral rules for agents
 
 - **"Set up BurpNinja"** → inspect env (`driver.sh doctor`), determine OS,

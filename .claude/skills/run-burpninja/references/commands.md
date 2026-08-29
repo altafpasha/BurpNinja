@@ -16,7 +16,20 @@ on macOS/Windows.** Prefer commands already used by BurpNinja. Anything under
 .claude/skills/run-burpninja/driver.sh kill        # end live session
 ```
 
-## Launch BurpNinja
+## Native CLI subcommands (BurpNinja.sh ≥ v2.2.0)
+
+```bash
+./BurpNinja.sh doctor            # read-only health check; exits non-zero on FAIL
+./BurpNinja.sh status            # compact readiness dashboard
+./BurpNinja.sh setup             # guided full install (needs device+root)
+./BurpNinja.sh setup --dry-run   # preview steps, change nothing
+./BurpNinja.sh --help            # usage / commands / examples
+./BurpNinja.sh version           # BurpNinja v2.2.0
+# flags: --dry-run  --safe  --verbose  --debug
+# no arguments -> interactive menu (unchanged)
+```
+
+## Launch BurpNinja (interactive menu)
 
 ```bash
 # macOS (standard user, TERM must be set):
